@@ -1,0 +1,3103 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "TaskManager API",
+        "description": "API Symfony du module **Projets** de TaskManager : authentification JWT,\ncycle de vie des projets (soumission, validation, assignation), \u00e9quipe\nprojet et agenda (rendez-vous / jalons).\n",
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/api/login_check": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Connexion : \u00e9change email/mot de passe contre un JWT.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "email",
+                                    "password"
+                                ],
+                                "properties": {
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "example": "admin@example.com"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "format": "password",
+                                        "example": "secret123"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Authentification r\u00e9ussie.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "token": {
+                                            "description": "JWT \u00e0 envoyer ensuite dans l'en-t\u00eate `Authorization: Bearer <token>`.",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Identifiants invalides.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer",
+                                            "example": 401
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Invalid credentials."
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": []
+            }
+        },
+        "/api/token/refresh": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Renouvelle un JWT \u00e0 partir d'un refresh token.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "refresh_token"
+                                ],
+                                "properties": {
+                                    "refresh_token": {
+                                        "type": "string"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Nouveau JWT et nouveau refresh token (single_use activ\u00e9, TTL 30 jours).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "token": {
+                                            "type": "string"
+                                        },
+                                        "refresh_token": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Refresh token invalide ou expir\u00e9."
+                    }
+                },
+                "security": []
+            }
+        },
+        "/api/attachments": {
+            "post": {
+                "tags": [
+                    "Attachments"
+                ],
+                "operationId": "post_api_attachments_create",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "properties": {
+                                    "file": {
+                                        "type": "string",
+                                        "format": "binary"
+                                    },
+                                    "projectId": {
+                                        "description": "Requis si subtaskId est absent.",
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "subtaskId": {
+                                        "description": "Requis si projectId est absent.",
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "attachmentType": {
+                                        "type": "string",
+                                        "enum": [
+                                            "project",
+                                            "subtask_deliverable",
+                                            "comment"
+                                        ]
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Pi\u00e8ce jointe enregistr\u00e9e."
+                    },
+                    "400": {
+                        "description": "Fichier manquant/invalide ou ni projectId ni subtaskId fourni.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Non autoris\u00e9.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Projet ou sous-t\u00e2che introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/attachments/{id}/validate": {
+            "patch": {
+                "tags": [
+                    "Attachments"
+                ],
+                "operationId": "patch_api_attachments_validate",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Validation enregistr\u00e9e."
+                    },
+                    "400": {
+                        "description": "D\u00e9cision invalide.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Non autoris\u00e9.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Pi\u00e8ce jointe introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/register": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "operationId": "post_api_register",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "name",
+                                    "email",
+                                    "password",
+                                    "role"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string"
+                                    },
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "format": "password"
+                                    },
+                                    "role": {
+                                        "type": "string",
+                                        "enum": [
+                                            "client",
+                                            "chef_de_projet",
+                                            "membre"
+                                        ]
+                                    },
+                                    "phone": {
+                                        "type": "string"
+                                    },
+                                    "company": {
+                                        "type": "string"
+                                    },
+                                    "memberSpecialty": {
+                                        "type": "string"
+                                    },
+                                    "bio": {
+                                        "type": "string"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Compte cr\u00e9\u00e9. `accountStatus` vaut `pending` pour un r\u00f4le autre que client (validation admin requise)."
+                    },
+                    "400": {
+                        "description": "Champs manquants ou invalides.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Un compte existe d\u00e9j\u00e0 avec cet e-mail.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/forgot-password": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "operationId": "post_api_forgot_password",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "email"
+                                ],
+                                "properties": {
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Toujours 200 que l'e-mail existe ou non, pour ne pas r\u00e9v\u00e9ler les comptes existants. MAILER_DSN=null en dev : l'e-mail n'est pas envoy\u00e9, le code est retourn\u00e9 directement dans la r\u00e9ponse (uniquement quand APP_ENV=dev) pour rester testable de bout en bout."
+                    }
+                }
+            }
+        },
+        "/api/reset-password": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "operationId": "post_api_reset_password",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "email",
+                                    "code",
+                                    "newPassword"
+                                ],
+                                "properties": {
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email"
+                                    },
+                                    "code": {
+                                        "type": "string",
+                                        "example": "123456"
+                                    },
+                                    "newPassword": {
+                                        "type": "string",
+                                        "format": "password"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Mot de passe chang\u00e9."
+                    },
+                    "400": {
+                        "description": "Code invalide, expir\u00e9, ou mot de passe trop court.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/projects/{id}/events": {
+            "get": {
+                "tags": [
+                    "Calendar events"
+                ],
+                "operationId": "get_api_projects_events_list",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Identifiant public (UUID) du projet.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Liste des \u00e9v\u00e9nements/rendez-vous de l'agenda du projet.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/CalendarEvent"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Non autoris\u00e9.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Projet introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Calendar events"
+                ],
+                "operationId": "post_api_projects_events_create",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Identifiant public (UUID) du projet.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "title"
+                                ],
+                                "properties": {
+                                    "title": {
+                                        "type": "string",
+                                        "example": "R\u00e9union de cadrage"
+                                    },
+                                    "type": {
+                                        "type": "string",
+                                        "example": "rendez_vous",
+                                        "enum": [
+                                            "cadrage",
+                                            "design",
+                                            "developpement",
+                                            "recette",
+                                            "livraison",
+                                            "rendez_vous",
+                                            "deadline"
+                                        ]
+                                    },
+                                    "date": {
+                                        "description": "D\u00e9faut : maintenant.",
+                                        "type": "string",
+                                        "format": "date-time"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "nullable": true
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "\u00c9v\u00e9nement cr\u00e9\u00e9.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CalendarEvent"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Titre, type ou date invalide.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Non autoris\u00e9.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Projet introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/projects/{id}/events/{eventId}": {
+            "delete": {
+                "tags": [
+                    "Calendar events"
+                ],
+                "operationId": "delete_api_projects_events_delete",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Identifiant public (UUID) du projet.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "eventId",
+                        "in": "path",
+                        "description": "Identifiant public (UUID) de l'\u00e9v\u00e9nement \u00e0 supprimer.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "\u00c9v\u00e9nement supprim\u00e9.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Non autoris\u00e9.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Projet ou \u00e9v\u00e9nement introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "tags": [
+                    "Calendar events"
+                ],
+                "operationId": "patch_api_projects_events_update",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Identifiant du projet.",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "eventId",
+                        "in": "path",
+                        "description": "Identifiant public (UUID) de l'\u00e9v\u00e9nement.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Tous les champs sont optionnels ; seuls ceux fournis sont mis \u00e0 jour.",
+                    "required": false,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "title": {
+                                        "type": "string"
+                                    },
+                                    "type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "cadrage",
+                                            "design",
+                                            "developpement",
+                                            "recette",
+                                            "livraison",
+                                            "rendez_vous",
+                                            "deadline"
+                                        ]
+                                    },
+                                    "date": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "nullable": true
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "\u00c9v\u00e9nement mis \u00e0 jour.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CalendarEvent"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Titre, type ou date invalide.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Non autoris\u00e9.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Projet ou \u00e9v\u00e9nement introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/employees": {
+            "post": {
+                "tags": [
+                    "Employees"
+                ],
+                "operationId": "post_api_employees_create",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "name",
+                                    "email",
+                                    "password",
+                                    "role"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "example": "Jane Doe"
+                                    },
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "example": "jane.doe@example.com"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "format": "password",
+                                        "example": "Secret123!"
+                                    },
+                                    "role": {
+                                        "type": "string",
+                                        "example": "membre",
+                                        "enum": [
+                                            "admin",
+                                            "chef_de_projet",
+                                            "membre"
+                                        ]
+                                    },
+                                    "memberSpecialty": {
+                                        "description": "Requis lorsque `role` vaut `membre`.",
+                                        "type": "string",
+                                        "enum": [
+                                            "Designer",
+                                            "DevOps",
+                                            "Frontend",
+                                            "Backend",
+                                            "Fullstack",
+                                            "QA",
+                                            "Chef de projet junior",
+                                            "Autre"
+                                        ]
+                                    },
+                                    "phone": {
+                                        "type": "string",
+                                        "example": "+33 6 12 34 56 78"
+                                    },
+                                    "company": {
+                                        "type": "string"
+                                    },
+                                    "address": {
+                                        "type": "string"
+                                    },
+                                    "bio": {
+                                        "type": "string"
+                                    },
+                                    "avatarUrl": {
+                                        "description": "D\u00e9faut : avatar g\u00e9n\u00e9r\u00e9 \u00e0 partir du nom si absent.",
+                                        "type": "string"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Employ\u00e9 cr\u00e9\u00e9.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "id": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        },
+                                        "name": {
+                                            "type": "string"
+                                        },
+                                        "email": {
+                                            "type": "string"
+                                        },
+                                        "roles": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "memberSpecialty": {
+                                            "type": "string",
+                                            "nullable": true
+                                        },
+                                        "avatarUrl": {
+                                            "type": "string"
+                                        },
+                                        "phone": {
+                                            "type": "string",
+                                            "nullable": true
+                                        },
+                                        "company": {
+                                            "type": "string",
+                                            "nullable": true
+                                        },
+                                        "address": {
+                                            "type": "string",
+                                            "nullable": true
+                                        },
+                                        "bio": {
+                                            "type": "string",
+                                            "nullable": true
+                                        },
+                                        "createdAt": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Champs manquants ou invalides (r\u00f4le, sp\u00e9cialit\u00e9...).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "R\u00e9serv\u00e9 \u00e0 un administrateur.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Un compte existe d\u00e9j\u00e0 avec cet e-mail.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/projects/{id}/modifications": {
+            "post": {
+                "tags": [
+                    "Modification requests"
+                ],
+                "operationId": "post_api_modifications_create",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Demande de modification cr\u00e9\u00e9e."
+                    },
+                    "400": {
+                        "description": "Donn\u00e9es invalides.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Non autoris\u00e9.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/modifications/{id}/review": {
+            "patch": {
+                "tags": [
+                    "Modification requests"
+                ],
+                "operationId": "patch_api_modifications_review",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "D\u00e9cision enregistr\u00e9e."
+                    },
+                    "400": {
+                        "description": "D\u00e9cision invalide.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Non autoris\u00e9.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Demande introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "La demande n'est plus en attente.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/notifications": {
+            "get": {
+                "tags": [
+                    "Notifications"
+                ],
+                "operationId": "get_api_notifications_list",
+                "responses": {
+                    "200": {
+                        "description": "Notifications du compte connect\u00e9, les plus r\u00e9centes en premier."
+                    }
+                }
+            }
+        },
+        "/api/notifications/{id}/read": {
+            "patch": {
+                "tags": [
+                    "Notifications"
+                ],
+                "operationId": "patch_api_notifications_read",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Notification marqu\u00e9e comme lue."
+                    },
+                    "403": {
+                        "description": "N'appartient pas \u00e0 l'utilisateur connect\u00e9.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Notification introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/notifications/read-all": {
+            "post": {
+                "tags": [
+                    "Notifications"
+                ],
+                "operationId": "post_api_notifications_read_all",
+                "responses": {
+                    "200": {
+                        "description": "Toutes les notifications du compte connect\u00e9 sont marqu\u00e9es comme lues."
+                    }
+                }
+            }
+        },
+        "/api/projects": {
+            "get": {
+                "tags": [
+                    "Projects"
+                ],
+                "operationId": "get_api_projects_list",
+                "parameters": [
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "description": "Nombre maximum de projets \u00e0 renvoyer.",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 50,
+                            "maximum": 200,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "offset",
+                        "in": "query",
+                        "description": "Nombre de projets \u00e0 sauter (pagination), tri\u00e9s du plus r\u00e9cent au plus ancien.",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 0,
+                            "minimum": 0
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Page de projets, tri\u00e9s du plus r\u00e9cent au plus ancien, avec m\u00e9tadonn\u00e9es de pagination.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/Project"
+                                            }
+                                        },
+                                        "meta": {
+                                            "properties": {
+                                                "total": {
+                                                    "description": "Nombre total de projets, toutes pages confondues.",
+                                                    "type": "integer",
+                                                    "example": 42
+                                                },
+                                                "limit": {
+                                                    "type": "integer",
+                                                    "example": 50
+                                                },
+                                                "offset": {
+                                                    "type": "integer",
+                                                    "example": 0
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Projects"
+                ],
+                "operationId": "post_api_projects_create",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "title"
+                                ],
+                                "properties": {
+                                    "title": {
+                                        "type": "string",
+                                        "example": "Refonte site vitrine"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "example": "Refonte compl\u00e8te du site marketing."
+                                    },
+                                    "priority": {
+                                        "type": "string",
+                                        "example": "medium",
+                                        "enum": [
+                                            "low",
+                                            "medium",
+                                            "high"
+                                        ]
+                                    },
+                                    "budget": {
+                                        "type": "integer",
+                                        "example": 5000
+                                    },
+                                    "startDate": {
+                                        "description": "D\u00e9faut : maintenant.",
+                                        "type": "string",
+                                        "format": "date-time"
+                                    },
+                                    "endDate": {
+                                        "description": "D\u00e9faut : +30 jours.",
+                                        "type": "string",
+                                        "format": "date-time"
+                                    },
+                                    "category": {
+                                        "type": "string",
+                                        "example": "web"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Projet cr\u00e9\u00e9 avec le statut `pending`. Le client authentifi\u00e9 devient automatiquement membre.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "id": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        },
+                                        "title": {
+                                            "type": "string"
+                                        },
+                                        "description": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "string",
+                                            "example": "pending"
+                                        },
+                                        "priority": {
+                                            "type": "string"
+                                        },
+                                        "budget": {
+                                            "type": "integer"
+                                        },
+                                        "progress": {
+                                            "type": "integer",
+                                            "example": 0
+                                        },
+                                        "startDate": {
+                                            "type": "string",
+                                            "format": "date-time",
+                                            "nullable": true
+                                        },
+                                        "endDate": {
+                                            "type": "string",
+                                            "format": "date-time",
+                                            "nullable": true
+                                        },
+                                        "category": {
+                                            "type": "string"
+                                        },
+                                        "createdAt": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        },
+                                        "members": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/ProjectMemberEntry"
+                                            }
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/projects/{id}/status": {
+            "patch": {
+                "tags": [
+                    "Projects"
+                ],
+                "operationId": "patch_api_projects_status",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Identifiant public (UUID) du projet.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "status"
+                                ],
+                                "properties": {
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "pending",
+                                            "validated",
+                                            "assigned",
+                                            "in_progress",
+                                            "completed",
+                                            "rejected"
+                                        ]
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Statut mis \u00e0 jour.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "id": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        },
+                                        "status": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Statut invalide.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Non autoris\u00e9 (r\u00e9serv\u00e9 \u00e0 l'admin ou au chef de projet assign\u00e9).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Projet introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/projects/{id}/members": {
+            "post": {
+                "tags": [
+                    "Projects"
+                ],
+                "operationId": "post_api_projects_add_member",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Identifiant public (UUID) du projet.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "userId"
+                                ],
+                                "properties": {
+                                    "userId": {
+                                        "description": "Identifiant public (UUID) ou e-mail de l'utilisateur.",
+                                        "type": "string",
+                                        "example": "f62b9ea6-8fb7-4c18-8db2-3b8f5634c614"
+                                    },
+                                    "role": {
+                                        "type": "string",
+                                        "example": "membre",
+                                        "enum": [
+                                            "membre",
+                                            "chef_de_projet",
+                                            "client"
+                                        ]
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Membre ajout\u00e9 au champ JSON `members` du projet.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "members": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/ProjectMemberEntry"
+                                            }
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Donn\u00e9es invalides, utilisateur ou r\u00f4le manquant/invalide.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Non autoris\u00e9.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Projet ou utilisateur introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Utilisateur d\u00e9j\u00e0 membre du projet.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/projects/{projectId}/members/{userId}": {
+            "delete": {
+                "tags": [
+                    "Projects"
+                ],
+                "operationId": "delete_api_projects_remove_member",
+                "parameters": [
+                    {
+                        "name": "projectId",
+                        "in": "path",
+                        "description": "Identifiant du projet.",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "userId",
+                        "in": "path",
+                        "description": "Identifiant public (UUID) de l'utilisateur \u00e0 retirer.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Membre retir\u00e9 du champ JSON `members` du projet.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "members": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/ProjectMemberEntry"
+                                            }
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Non autoris\u00e9.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Projet ou membre introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/projects/{id}/team-members": {
+            "get": {
+                "tags": [
+                    "Project team"
+                ],
+                "operationId": "get_api_projects_team_list",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Identifiant public (UUID) du projet.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Liste de l'\u00e9quipe du projet (table ProjectMember).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/TeamMemberEntry"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Non autoris\u00e9.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Projet introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Project team"
+                ],
+                "operationId": "post_api_projects_team_add",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Identifiant public (UUID) du projet.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "userId"
+                                ],
+                                "properties": {
+                                    "userId": {
+                                        "description": "Identifiant public (UUID) de l'utilisateur.",
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "example": "f62b9ea6-8fb7-4c18-8db2-3b8f5634c614"
+                                    },
+                                    "role": {
+                                        "type": "string",
+                                        "example": "membre",
+                                        "enum": [
+                                            "membre",
+                                            "chef_de_projet",
+                                            "client"
+                                        ]
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Membre ajout\u00e9 \u00e0 la table ProjectMember.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "member": {
+                                            "$ref": "#/components/schemas/TeamMemberEntry"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Donn\u00e9es invalides, utilisateur ou r\u00f4le manquant/invalide.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Non autoris\u00e9 (r\u00e9serv\u00e9 \u00e0 l'admin ou au chef de projet).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Projet ou utilisateur introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Utilisateur d\u00e9j\u00e0 membre du projet.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/projects/{id}/team-members/{memberId}": {
+            "delete": {
+                "tags": [
+                    "Project team"
+                ],
+                "operationId": "delete_api_projects_team_remove",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Identifiant public (UUID) du projet.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "memberId",
+                        "in": "path",
+                        "description": "Identifiant public (UUID) de la ligne ProjectMember \u00e0 retirer.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Membre retir\u00e9 de l'\u00e9quipe.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Non autoris\u00e9 (r\u00e9serv\u00e9 \u00e0 l'admin ou au chef de projet).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Projet ou membre introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/projects/{id}/validate": {
+            "post": {
+                "tags": [
+                    "Project workflow"
+                ],
+                "operationId": "post_api_projects_validate",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Identifiant public (UUID) du projet.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Projet pass\u00e9 au statut `validated`.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "project": {
+                                            "$ref": "#/components/schemas/WorkflowProjectSummary"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "R\u00e9serv\u00e9 \u00e0 un administrateur.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Projet introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Le projet n'est pas au statut `pending`.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/projects/{id}/reject": {
+            "post": {
+                "tags": [
+                    "Project workflow"
+                ],
+                "operationId": "post_api_projects_reject",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Identifiant public (UUID) du projet.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "reason"
+                                ],
+                                "properties": {
+                                    "reason": {
+                                        "type": "string",
+                                        "example": "Budget insuffisant."
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Projet pass\u00e9 au statut `rejected`.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "project": {
+                                            "$ref": "#/components/schemas/WorkflowProjectSummary"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Le motif de rejet est obligatoire.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "R\u00e9serv\u00e9 \u00e0 un administrateur.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Projet introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Le projet n'est pas au statut `pending`.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/projects/{id}/assign": {
+            "post": {
+                "tags": [
+                    "Project workflow"
+                ],
+                "operationId": "post_api_projects_assign",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Identifiant public (UUID) du projet.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "managerId"
+                                ],
+                                "properties": {
+                                    "managerId": {
+                                        "description": "Identifiant public (UUID) ou e-mail d'un utilisateur ayant le r\u00f4le ROLE_CHEF_DE_PROJET.",
+                                        "type": "string",
+                                        "example": "7d5572a7-a1d4-4e27-bdde-036061542296"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Chef de projet assign\u00e9, projet pass\u00e9 au statut `assigned`.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "project": {
+                                            "$ref": "#/components/schemas/WorkflowProjectSummary"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Chef de projet manquant ou l'utilisateur n'a pas le r\u00f4le ROLE_CHEF_DE_PROJET.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "R\u00e9serv\u00e9 \u00e0 un administrateur.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Projet ou utilisateur introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Le projet n'est pas au statut `validated`.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/projects/{id}/workflow-history": {
+            "get": {
+                "tags": [
+                    "Project workflow"
+                ],
+                "operationId": "get_api_projects_workflow_history",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Identifiant public (UUID) du projet.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Historique des changements de statut du projet, du plus ancien au plus r\u00e9cent.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/ProjectStatusLog"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Non autoris\u00e9 \u00e0 consulter ce projet.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Projet introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/projects/{id}/requetes": {
+            "post": {
+                "tags": [
+                    "Requetes"
+                ],
+                "operationId": "post_api_requetes_create",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Requ\u00eate envoy\u00e9e au client."
+                    },
+                    "400": {
+                        "description": "Contenu manquant.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "R\u00e9serv\u00e9 \u00e0 l'\u00e9quipe (pas au client).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/requetes/{id}/answer": {
+            "patch": {
+                "tags": [
+                    "Requetes"
+                ],
+                "operationId": "patch_api_requetes_answer",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "R\u00e9ponse enregistr\u00e9e."
+                    },
+                    "400": {
+                        "description": "R\u00e9ponse manquante.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "R\u00e9serv\u00e9 au client du projet.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Requ\u00eate d\u00e9j\u00e0 r\u00e9pondue.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/projects/{id}/subtasks": {
+            "post": {
+                "tags": [
+                    "Subtasks"
+                ],
+                "operationId": "post_api_subtasks_create",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Sous-t\u00e2che cr\u00e9\u00e9e."
+                    },
+                    "400": {
+                        "description": "Donn\u00e9es invalides.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Non autoris\u00e9.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Projet introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/subtasks/{id}/status": {
+            "patch": {
+                "tags": [
+                    "Subtasks"
+                ],
+                "operationId": "patch_api_subtasks_status",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Statut mis \u00e0 jour."
+                    },
+                    "400": {
+                        "description": "Statut invalide.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Sous-t\u00e2che introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/subtasks/{id}/approve": {
+            "post": {
+                "tags": [
+                    "Subtasks"
+                ],
+                "operationId": "post_api_subtasks_approve",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Sous-t\u00e2che approuv\u00e9e (passe \u00e0 `done`)."
+                    },
+                    "404": {
+                        "description": "Sous-t\u00e2che introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/subtasks/{id}/assign": {
+            "patch": {
+                "tags": [
+                    "Subtasks"
+                ],
+                "operationId": "patch_api_subtasks_assign",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Sous-t\u00e2che assign\u00e9e."
+                    },
+                    "404": {
+                        "description": "Sous-t\u00e2che ou utilisateur introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/subtasks/{id}/progress": {
+            "patch": {
+                "tags": [
+                    "Subtasks"
+                ],
+                "operationId": "patch_api_subtasks_progress",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Progression mise \u00e0 jour."
+                    },
+                    "400": {
+                        "description": "Progression invalide.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/subtasks/{id}/timer": {
+            "post": {
+                "tags": [
+                    "Subtasks"
+                ],
+                "operationId": "post_api_subtasks_timer_toggle",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Timer d\u00e9marr\u00e9 ou arr\u00eat\u00e9 (toggle)."
+                    }
+                }
+            }
+        },
+        "/api/subtasks/{id}/comments": {
+            "post": {
+                "tags": [
+                    "Subtasks"
+                ],
+                "operationId": "post_api_subtasks_comments_create",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Commentaire ajout\u00e9."
+                    },
+                    "400": {
+                        "description": "Contenu manquant.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/projects/{id}/task-requests": {
+            "post": {
+                "tags": [
+                    "Task requests"
+                ],
+                "operationId": "post_api_task_requests_create",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Demande de t\u00e2che cr\u00e9\u00e9e."
+                    },
+                    "400": {
+                        "description": "Titre manquant.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "R\u00e9serv\u00e9 au client du projet.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/task-requests/{id}/review": {
+            "patch": {
+                "tags": [
+                    "Task requests"
+                ],
+                "operationId": "patch_api_task_requests_review",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "D\u00e9cision enregistr\u00e9e ; une sous-t\u00e2che est cr\u00e9\u00e9e si approuv\u00e9e."
+                    },
+                    "400": {
+                        "description": "D\u00e9cision invalide.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Non autoris\u00e9.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "La demande n'est plus en attente.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/uploads": {
+            "post": {
+                "tags": [
+                    "Uploads"
+                ],
+                "operationId": "post_api_uploads_create",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "properties": {
+                                    "file": {
+                                        "type": "string",
+                                        "format": "binary"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Fichier stock\u00e9, URL publique renvoy\u00e9e.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "url": {
+                                            "type": "string",
+                                            "example": "/uploads/3f1c2b7e9a4d4f0e8b1c6a2d9e7f5c3a.png"
+                                        },
+                                        "fileName": {
+                                            "type": "string"
+                                        },
+                                        "fileType": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Fichier manquant, trop volumineux ou type non autoris\u00e9.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users": {
+            "get": {
+                "tags": [
+                    "Users"
+                ],
+                "operationId": "get_api_users_list",
+                "responses": {
+                    "200": {
+                        "description": "Liste de tous les utilisateurs (identit\u00e9 de base), pour les avatars/s\u00e9lecteurs de membre dans toute l'app."
+                    }
+                }
+            }
+        },
+        "/api/users/me": {
+            "get": {
+                "tags": [
+                    "Users"
+                ],
+                "operationId": "get_api_users_me",
+                "responses": {
+                    "200": {
+                        "description": "Profil complet de son propre compte."
+                    }
+                }
+            },
+            "patch": {
+                "tags": [
+                    "Users"
+                ],
+                "operationId": "patch_api_users_update_me",
+                "responses": {
+                    "200": {
+                        "description": "Profil mis \u00e0 jour."
+                    }
+                }
+            }
+        },
+        "/api/users/{id}": {
+            "patch": {
+                "tags": [
+                    "Users"
+                ],
+                "operationId": "patch_api_users_update",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Utilisateur mis \u00e0 jour (admin)."
+                    },
+                    "400": {
+                        "description": "R\u00f4le ou sp\u00e9cialit\u00e9 invalide.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Utilisateur introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/{id}/review": {
+            "patch": {
+                "tags": [
+                    "Users"
+                ],
+                "operationId": "patch_api_users_review",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "decision"
+                                ],
+                                "properties": {
+                                    "decision": {
+                                        "type": "string",
+                                        "enum": [
+                                            "approved",
+                                            "rejected"
+                                        ]
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Compte valid\u00e9 ou refus\u00e9."
+                    },
+                    "400": {
+                        "description": "D\u00e9cision invalide.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Utilisateur introuvable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorMessage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "UserSummary": {
+                "description": "Utilisateur avec adresse e-mail (client ou membre).",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "example": "f62b9ea6-8fb7-4c18-8db2-3b8f5634c614"
+                    },
+                    "name": {
+                        "type": "string",
+                        "example": "Ada Lovelace"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "example": "ada@example.com"
+                    }
+                },
+                "type": "object",
+                "nullable": true
+            },
+            "UserRef": {
+                "description": "R\u00e9f\u00e9rence utilisateur minimale (sans e-mail), utilis\u00e9e dans le workflow projet.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "example": "f62b9ea6-8fb7-4c18-8db2-3b8f5634c614"
+                    },
+                    "name": {
+                        "type": "string",
+                        "example": "Ada Lovelace"
+                    }
+                },
+                "type": "object",
+                "nullable": true
+            },
+            "ProjectMemberEntry": {
+                "description": "Entr\u00e9e du champ JSON `members` port\u00e9 par le projet (ind\u00e9pendant de la table relationnelle ProjectMember).",
+                "properties": {
+                    "userId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "example": "f62b9ea6-8fb7-4c18-8db2-3b8f5634c614"
+                    },
+                    "role": {
+                        "type": "string",
+                        "example": "membre",
+                        "enum": [
+                            "membre",
+                            "chef_de_projet",
+                            "client"
+                        ]
+                    },
+                    "joinedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "type": "object"
+            },
+            "Project": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "example": "b25a3a01-037f-454f-bbfa-5771589d1511"
+                    },
+                    "title": {
+                        "type": "string",
+                        "example": "Refonte site vitrine"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string",
+                        "example": "pending",
+                        "enum": [
+                            "pending",
+                            "validated",
+                            "assigned",
+                            "in_progress",
+                            "completed",
+                            "rejected"
+                        ]
+                    },
+                    "priority": {
+                        "type": "string",
+                        "example": "medium",
+                        "enum": [
+                            "low",
+                            "medium",
+                            "high"
+                        ]
+                    },
+                    "budget": {
+                        "type": "integer",
+                        "example": 5000
+                    },
+                    "progress": {
+                        "type": "integer",
+                        "example": 0
+                    },
+                    "startDate": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "endDate": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "category": {
+                        "type": "string",
+                        "example": "web"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "client": {
+                        "$ref": "#/components/schemas/UserSummary"
+                    },
+                    "manager": {
+                        "$ref": "#/components/schemas/UserSummary"
+                    },
+                    "members": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ProjectMemberEntry"
+                        }
+                    }
+                },
+                "type": "object"
+            },
+            "WorkflowProjectSummary": {
+                "description": "Vue r\u00e9sum\u00e9e du projet renvoy\u00e9e par les actions de workflow (validate/reject/assign).",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "pending",
+                            "validated",
+                            "assigned",
+                            "in_progress",
+                            "completed",
+                            "rejected"
+                        ]
+                    },
+                    "client": {
+                        "$ref": "#/components/schemas/UserRef"
+                    },
+                    "manager": {
+                        "$ref": "#/components/schemas/UserRef"
+                    }
+                },
+                "type": "object"
+            },
+            "ProjectStatusLog": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "fromStatus": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "toStatus": {
+                        "type": "string"
+                    },
+                    "reason": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "actor": {
+                        "$ref": "#/components/schemas/UserRef"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "type": "object"
+            },
+            "TeamMemberEntry": {
+                "description": "Ligne de la table relationnelle ProjectMember (\u00e9quipe projet r\u00e9elle).",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "role": {
+                        "type": "string",
+                        "enum": [
+                            "membre",
+                            "chef_de_projet",
+                            "client"
+                        ]
+                    },
+                    "joinedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "user": {
+                        "$ref": "#/components/schemas/UserSummary"
+                    }
+                },
+                "type": "object"
+            },
+            "CalendarEvent": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "projectId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "date": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "cadrage",
+                            "design",
+                            "developpement",
+                            "recette",
+                            "livraison",
+                            "rendez_vous",
+                            "deadline"
+                        ]
+                    },
+                    "description": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "createdBy": {
+                        "$ref": "#/components/schemas/UserRef"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "type": "object"
+            },
+            "ErrorMessage": {
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "example": "Non autoris\u00e9."
+                    }
+                },
+                "type": "object"
+            }
+        },
+        "securitySchemes": {
+            "bearerAuth": {
+                "type": "http",
+                "bearerFormat": "JWT",
+                "scheme": "bearer"
+            }
+        }
+    },
+    "security": [
+        {
+            "bearerAuth": []
+        }
+    ],
+    "tags": [
+        {
+            "name": "Attachments"
+        },
+        {
+            "name": "Auth"
+        },
+        {
+            "name": "Calendar events"
+        },
+        {
+            "name": "Employees"
+        },
+        {
+            "name": "Modification requests"
+        },
+        {
+            "name": "Notifications"
+        },
+        {
+            "name": "Projects"
+        },
+        {
+            "name": "Project team"
+        },
+        {
+            "name": "Project workflow"
+        },
+        {
+            "name": "Requetes"
+        },
+        {
+            "name": "Subtasks"
+        },
+        {
+            "name": "Task requests"
+        },
+        {
+            "name": "Uploads"
+        },
+        {
+            "name": "Users"
+        },
+        {
+            "name": "Authentication",
+            "description": "Authentication"
+        }
+    ]
+}

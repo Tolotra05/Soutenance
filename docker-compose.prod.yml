@@ -1,0 +1,83 @@
+# Environnement de PROD : images buildées (pas de volumes de code), MySQL non
+# exposé sur l'hôte, pas d'Adminer. Lancer avec :
+#   docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    # Pas de `ports:` : seuls les conteneurs du réseau interne doivent
+    # atteindre MySQL, pas l'hôte ni l'extérieur.
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  back:
+    build:
+      context: ./back
+      target: prod
+    image: ${REGISTRY:-taskmanager}/back:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      APP_ENV: prod
+      APP_SECRET: ${APP_SECRET}
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+      JWT_PASSPHRASE: ${JWT_PASSPHRASE}
+      JWT_REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL}
+      CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN}
+      FRONTEND_URL: ${FRONTEND_URL}
+      DEFAULT_URI: ${DEFAULT_URI}
+      MAILER_DSN: ${MAILER_DSN}
+    volumes:
+      # Les clés JWT sont générées une seule fois (au tout premier démarrage)
+      # par l'entrypoint puis doivent survivre aux recréations du conteneur :
+      # sans ça, chaque déploiement invaliderait tous les tokens existants.
+      - jwt_keys:/var/www/html/config/jwt
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@fsockopen('127.0.0.1',9000)?0:1);"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  nginx:
+    build:
+      context: ./back
+      target: nginx-prod
+    image: ${REGISTRY:-taskmanager}/nginx:${TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "${BACK_HTTP_PORT:-8000}:80"
+    depends_on:
+      back:
+        condition: service_healthy
+
+  front:
+    build:
+      context: ./front
+      target: runner
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    image: ${REGISTRY:-taskmanager}/front:${TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "${FRONT_PORT:-3000}:3000"
+    depends_on:
+      - back
+
+volumes:
+  mysql_data:
+  jwt_keys:

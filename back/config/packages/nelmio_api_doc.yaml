@@ -1,0 +1,168 @@
+nelmio_api_doc:
+    documentation:
+        info:
+            title: TaskManager API
+            description: |
+                API Symfony du module **Projets** de TaskManager : authentification JWT,
+                cycle de vie des projets (soumission, validation, assignation), équipe
+                projet et agenda (rendez-vous / jalons).
+            version: 1.0.0
+        components:
+            securitySchemes:
+                bearerAuth:
+                    type: http
+                    scheme: bearer
+                    bearerFormat: JWT
+            schemas:
+                UserSummary:
+                    type: object
+                    nullable: true
+                    description: "Utilisateur avec adresse e-mail (client ou membre)."
+                    properties:
+                        id: { type: string, format: uuid, example: "f62b9ea6-8fb7-4c18-8db2-3b8f5634c614" }
+                        name: { type: string, example: "Ada Lovelace" }
+                        email: { type: string, format: email, example: "ada@example.com" }
+                UserRef:
+                    type: object
+                    nullable: true
+                    description: "Référence utilisateur minimale (sans e-mail), utilisée dans le workflow projet."
+                    properties:
+                        id: { type: string, format: uuid, example: "f62b9ea6-8fb7-4c18-8db2-3b8f5634c614" }
+                        name: { type: string, example: "Ada Lovelace" }
+                ProjectMemberEntry:
+                    type: object
+                    description: "Entrée du champ JSON `members` porté par le projet (indépendant de la table relationnelle ProjectMember)."
+                    properties:
+                        userId: { type: string, format: uuid, example: "f62b9ea6-8fb7-4c18-8db2-3b8f5634c614" }
+                        role: { type: string, enum: [membre, chef_de_projet, client], example: membre }
+                        joinedAt: { type: string, format: date-time }
+                Project:
+                    type: object
+                    properties:
+                        id: { type: string, format: uuid, example: "b25a3a01-037f-454f-bbfa-5771589d1511" }
+                        title: { type: string, example: "Refonte site vitrine" }
+                        description: { type: string }
+                        status: { type: string, enum: [pending, validated, assigned, in_progress, completed, rejected], example: pending }
+                        priority: { type: string, enum: [low, medium, high], example: medium }
+                        budget: { type: integer, example: 5000 }
+                        progress: { type: integer, example: 0 }
+                        startDate: { type: string, format: date-time, nullable: true }
+                        endDate: { type: string, format: date-time, nullable: true }
+                        category: { type: string, example: web }
+                        createdAt: { type: string, format: date-time }
+                        client: { $ref: '#/components/schemas/UserSummary' }
+                        manager: { $ref: '#/components/schemas/UserSummary' }
+                        members:
+                            type: array
+                            items: { $ref: '#/components/schemas/ProjectMemberEntry' }
+                WorkflowProjectSummary:
+                    type: object
+                    description: "Vue résumée du projet renvoyée par les actions de workflow (validate/reject/assign)."
+                    properties:
+                        id: { type: string, format: uuid }
+                        title: { type: string }
+                        status: { type: string, enum: [pending, validated, assigned, in_progress, completed, rejected] }
+                        client: { $ref: '#/components/schemas/UserRef' }
+                        manager: { $ref: '#/components/schemas/UserRef' }
+                ProjectStatusLog:
+                    type: object
+                    properties:
+                        id: { type: string, format: uuid }
+                        fromStatus: { type: string, nullable: true }
+                        toStatus: { type: string }
+                        reason: { type: string, nullable: true }
+                        actor: { $ref: '#/components/schemas/UserRef' }
+                        createdAt: { type: string, format: date-time }
+                TeamMemberEntry:
+                    type: object
+                    description: "Ligne de la table relationnelle ProjectMember (équipe projet réelle)."
+                    properties:
+                        id: { type: string, format: uuid }
+                        role: { type: string, enum: [membre, chef_de_projet, client] }
+                        joinedAt: { type: string, format: date-time }
+                        user: { $ref: '#/components/schemas/UserSummary' }
+                CalendarEvent:
+                    type: object
+                    properties:
+                        id: { type: string, format: uuid }
+                        projectId: { type: string, format: uuid }
+                        title: { type: string }
+                        date: { type: string, format: date-time }
+                        type: { type: string, enum: [cadrage, design, developpement, recette, livraison, rendez_vous, deadline] }
+                        description: { type: string, nullable: true }
+                        createdBy: { $ref: '#/components/schemas/UserRef' }
+                        createdAt: { type: string, format: date-time }
+                ErrorMessage:
+                    type: object
+                    properties:
+                        message: { type: string, example: "Non autorisé." }
+        security:
+            - bearerAuth: []
+        # Les routes ci-dessous (config/routes.yaml) n'ont pas de contrôleur PHP
+        # (elles sont interceptées par les firewalls Lexik JWT / Gesdinet avant
+        # tout routage vers un contrôleur) : NelmioApiDocBundle ne peut donc pas
+        # les détecter automatiquement et elles sont documentées ici à la main.
+        paths:
+            /api/login_check:
+                post:
+                    tags: [Authentication]
+                    summary: "Connexion : échange email/mot de passe contre un JWT."
+                    security: []
+                    requestBody:
+                        required: true
+                        content:
+                            application/json:
+                                schema:
+                                    type: object
+                                    required: [email, password]
+                                    properties:
+                                        email: { type: string, format: email, example: admin@example.com }
+                                        password: { type: string, format: password, example: secret123 }
+                    responses:
+                        '200':
+                            description: "Authentification réussie."
+                            content:
+                                application/json:
+                                    schema:
+                                        type: object
+                                        properties:
+                                            token: { type: string, description: "JWT à envoyer ensuite dans l'en-tête `Authorization: Bearer <token>`." }
+                        '401':
+                            description: "Identifiants invalides."
+                            content:
+                                application/json:
+                                    schema:
+                                        type: object
+                                        properties:
+                                            code: { type: integer, example: 401 }
+                                            message: { type: string, example: "Invalid credentials." }
+            /api/token/refresh:
+                post:
+                    tags: [Authentication]
+                    summary: "Renouvelle un JWT à partir d'un refresh token."
+                    security: []
+                    requestBody:
+                        required: true
+                        content:
+                            application/json:
+                                schema:
+                                    type: object
+                                    required: [refresh_token]
+                                    properties:
+                                        refresh_token: { type: string }
+                    responses:
+                        '200':
+                            description: "Nouveau JWT et nouveau refresh token (single_use activé, TTL 30 jours)."
+                            content:
+                                application/json:
+                                    schema:
+                                        type: object
+                                        properties:
+                                            token: { type: string }
+                                            refresh_token: { type: string }
+                        '401':
+                            description: "Refresh token invalide ou expiré."
+    areas:
+        default:
+            path_patterns:
+                - ^/api(?!/doc)

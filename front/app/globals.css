@@ -1,0 +1,156 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Surfaces — ultra clean, slightly off-white for background, pure white for cards */
+    --background: 210 40% 98%; /* #f8fafc */
+    --foreground: 222 47% 11%; /* matching the dark slate */
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Primary — elegant deep indigo/slate */
+    --primary: 224 82% 56%; /* #2563EB - refined blue */
+    --primary-foreground: 0 0% 100%;
+    --primary-light: 224 82% 66%;
+
+    /* Secondary — soft grey */
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    /* Muted */
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    /* Accent */
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    /* Semantic - matching the vibrant colors from the image */
+    --success: 160 84% 39%; /* #10b981 - Emerald */
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%; /* #f59e0b - Amber */
+    --warning-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%; /* #ef4444 - Red */
+    --destructive-foreground: 0 0% 100%;
+    --info: 217 91% 60%; /* #3b82f6 - Blue */
+    --info-foreground: 0 0% 100%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 224 82% 56%;
+
+    /* Chart palette */
+    --chart-1: 224 82% 56%;
+    --chart-2: 199 89% 48%;
+    --chart-3: 254 70% 60%;
+    --chart-4: 38 92% 50%;
+    --chart-5: 142 76% 36%;
+
+    --radius: 0.5rem;
+
+    /* Sidebar — dark slate to match the reference image */
+    --sidebar: 222 47% 11%; /* #0f172a */
+    --sidebar-foreground: 210 40% 98%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --primary-light: 217 91% 69%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --success: 142 70% 40%;
+    --success-foreground: 222.2 84% 4.9%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 222.2 84% 4.9%;
+    --destructive: 348 83% 55%;
+    --destructive-foreground: 210 40% 98%;
+    --info: 217 91% 60%;
+    --info-foreground: 222.2 84% 4.9%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+
+    --chart-1: 217.2 91.2% 59.8%;
+    --chart-2: 199 89% 58%;
+    --chart-3: 254 70% 70%;
+    --chart-4: 38 92% 60%;
+    --chart-5: 142 70% 50%;
+
+    --sidebar: 222.2 84% 4.9%;
+    --sidebar-foreground: 210 40% 98%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    user-select: none;
+  }
+  input, textarea, [contenteditable="true"], [role="textbox"], select {
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    user-select: text;
+  }
+}
+
+/* Custom scrollbar */
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.3);
+    border-radius: 3px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.5);
+  }
+
+  .glass {
+    background: hsl(var(--card) / 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .gradient-text {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+}

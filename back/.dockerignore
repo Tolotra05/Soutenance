@@ -1,0 +1,11 @@
+.git
+vendor
+var
+node_modules
+.env.local
+.env.*.local
+config/jwt/*.pem
+swagger
+back.zip
+README_BACKEND.md
+README_PROJETS.md
