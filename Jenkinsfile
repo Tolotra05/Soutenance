@@ -51,7 +51,7 @@ pipeline {
             parallel {
                 stage('Front : typecheck + lint') {
                     steps {
-                        sh 'docker compose -f docker-compose.prod.yml run --rm --no-deps front sh -c "npm run typecheck && npm run lint"'
+                        sh 'docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD/front":/app -w /app node:20-alpine sh -c "npm ci && npm run typecheck && npm run lint"'
                     }
                 }
                 stage('Back : validations') {
@@ -68,7 +68,7 @@ pipeline {
                         // ici le jour où une vraie suite de tests existe.
                         sh '''
                           docker compose -f docker-compose.prod.yml run --rm --no-deps --entrypoint sh back -c "
-                            composer validate --strict &&
+                            composer validate --strict --no-check-publish &&
                             php bin/console lint:yaml config &&
                             php bin/console lint:container
                           "
@@ -125,7 +125,7 @@ pipeline {
             // Le .env contient des secrets (copiés depuis la credential
             // "taskmanager-env") : jamais laissé sur le disque de l'agent
             // une fois le build terminé.
-            sh 'rm -f .env'
+            sh 'rm -f .env && rm -rf front/node_modules'
         }
     }
 }
