@@ -61,6 +61,7 @@ ARG APP_ENV=prod
 ENV APP_ENV=${APP_ENV}
 
 COPY --from=composer /app/vendor ./vendor
+COPY --from=composer /usr/bin/composer /usr/bin/composer
 COPY . .
 RUN composer dump-autoload --classmap-authoritative --no-dev \
     && mkdir -p var/cache var/log config/jwt \

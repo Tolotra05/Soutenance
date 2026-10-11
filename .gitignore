@@ -1,2 +1,2 @@
 # Secrets Docker réels (copié depuis .env.docker.example, jamais commité)
-.env
+/.env
