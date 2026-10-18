@@ -1,186 +1,188 @@
 # CI/CD Jenkins — TaskManager
 
-Pipeline Jenkins pour la stack dockerisée décrite dans `DOCKER.md` (`front`,
-`back`+`nginx`, `mysql`). Build, vérifications statiques, puis push d'images
-et déploiement optionnels — rien de tout cela n'a été exécuté ni testé pour
-produire ces fichiers, comme pour `DOCKER.md`.
+Un Jenkins **préconfiguré** (dossier `jenkins/`) tourne sur la **même machine
+que la prod**. À chaque nouveau commit sur `master`, il construit les images,
+vérifie le code, sauvegarde la base, déploie la prod et contrôle qu'elle
+répond. Tout est visible étape par étape dans l'interface.
 
-> **Prérequis implicite** : ce `Jenkinsfile` suppose que ce dossier
-> (`front/`, `back/`, `docker-compose*.yml`...) est à la racine d'un dépôt
-> Git accessible par Jenkins. Ce n'est pas encore le cas aujourd'hui (`front/`
-> et `back/` ont chacun leur propre `.git` local, sans remote) — à faire
-> avant de créer le job Jenkins (voir Section 1).
-
----
-
-## Section 1 — Prérequis
-
-### Dépôt Git
-
-Jenkins a besoin d'un seul dépôt Git racine (avec `Jenkinsfile`,
-`docker-compose.yml`, `front/`, `back/` dedans) poussé sur un remote qu'il
-peut atteindre (GitHub, GitLab, Gitea, Bitbucket...). Si ce n'est pas déjà
-fait :
-
-```bash
-cd D:\WORK\OTHER\Stage\Mao
-git init
-git add .
-git commit -m "chore: initial commit"
-git remote add origin <url-de-votre-remote>
-git push -u origin main
-```
-
-(`front/.git` et `back/.git` existants devront être supprimés ou gérés en
-sous-modules avant ce `git add .`, sans quoi Git les traitera comme des
-sous-modules vides — à adapter selon votre choix d'organisation du dépôt.)
-
-### Jenkins
-
-- **Jenkins 2.4xx+** (LTS récente).
-- **Docker + Docker Compose v2** installés sur l'agent qui exécutera le
-  pipeline, et l'utilisateur système de Jenkins (souvent `jenkins`) doit
-  pouvoir utiliser Docker (membre du groupe `docker`, ou Jenkins lui-même
-  tourne dans un conteneur avec le socket Docker monté).
-- **Plugins** : `Pipeline`, `Git`, `Credentials Binding`, `SSH Agent` (pour le
-  stage de déploiement). Tous sauf `SSH Agent` sont installés par défaut sur
-  une instance Jenkins standard.
-
-### Credentials à créer (Administrer Jenkins → Credentials)
-
-| ID (exact, utilisé dans le `Jenkinsfile`) | Type | Contenu | Obligatoire ? |
-|---|---|---|---|
-| `taskmanager-env` | Secret file | Un fichier `.env` complet (voir `.env.docker.example`), avec de vrais secrets | **Oui** — sans lui, dès le 2ᵉ stage échoue |
-| `taskmanager-registry-creds` | Username with password | Identifiants du registre Docker | Non — seulement si vous lancez avec `REGISTRY` renseigné |
-| `taskmanager-deploy-ssh` | SSH Username with private key | Accès SSH au serveur de déploiement | Non — seulement si vous lancez avec `DEPLOY=true` |
-| `taskmanager-deploy-host` | Secret text | Nom d'hôte/IP du serveur de déploiement | Non — idem |
-
-Seule `taskmanager-env` est nécessaire pour qu'un run "simple" (build +
-vérifications, sans push ni déploiement) passe.
+Rien n'est à configurer à la main dans Jenkins. Plugins, compte admin,
+credential `.env` et job sont créés au démarrage à partir de
+`jenkins/casc.yaml` (Configuration as Code). Une modification faite dans
+l'interface est écrasée au redémarrage suivant : on modifie les fichiers de
+`jenkins/` à la place.
 
 ---
 
-## Section 2 — Créer le job Jenkins
-
-**Option recommandée : Multibranch Pipeline** (détecte automatiquement ce
-`Jenkinsfile` sur chaque branche/PR) :
-
-1. *Nouveau Item* → *Multibranch Pipeline*.
-2. *Branch Sources* → *Git* (ou GitHub/GitLab selon votre remote) → renseigner
-   l'URL du dépôt + les credentials d'accès au repo si privé.
-3. *Build Configuration* → *by Jenkinsfile*, chemin par défaut (`Jenkinsfile`
-   à la racine) convient déjà.
-4. Sauvegarder : Jenkins scanne les branches et lance un premier build sur
-   chacune.
-
-**Option simple : Pipeline classique** (une seule branche) :
-
-1. *Nouveau Item* → *Pipeline*.
-2. *Pipeline* → *Definition* : *Pipeline script from SCM* → Git → URL du
-   dépôt + branche (`main`).
-3. *Script Path* : `Jenkinsfile` (valeur par défaut).
-
----
-
-## Section 3 — Stages du pipeline
-
-| Stage | Ce qu'il fait | Toujours exécuté ? |
-|---|---|---|
-| `Checkout` | Clone le dépôt au commit déclenchant le build | Oui |
-| `Préparer .env` | Copie la credential `taskmanager-env` en `.env` à la racine du workspace | Oui |
-| `Build images` | `docker compose -f docker-compose.prod.yml build` (front + back + nginx) | Oui |
-| `Vérifications` → `Front : typecheck + lint` | `npm run typecheck && npm run lint` dans l'image front, en parallèle du stage back | Oui |
-| `Vérifications` → `Back : validations` | `composer validate --strict`, `lint:yaml`, `lint:container` dans l'image back (entrypoint court-circuité, pas de DB nécessaire) | Oui |
-| `Push images` | `docker login` + `docker compose push` vers `params.REGISTRY` | Seulement sur `main`, et si le paramètre `REGISTRY` est renseigné au lancement |
-| `Déploiement` | `scp` + `ssh` vers le serveur cible, puis `docker compose -f docker-compose.prod.yml up -d` à distance | Seulement sur `main`, et si le paramètre `DEPLOY` est coché au lancement |
-
-Le stage *Vérifications* reflète l'état réel du projet : **il n'y a
-aujourd'hui aucune suite PHPUnit ni aucun test front installés** (vérifié
-dans `composer.json` / `package.json` — ni `phpunit/phpunit`, ni
-`symfony/test-pack`, ni script `test` côté front). Plutôt que d'inventer des
-commandes qui échoueraient à coup sûr, ce pipeline ne lance que des
-vérifications qui existent réellement aujourd'hui (typecheck, lint, validité
-du mapping Doctrine/YAML/container, validité de `composer.json`). Ajoutez un
-stage `Tests` dédié le jour où une vraie suite de tests est introduite.
-
----
-
-## Section 4 — Lancer un build
-
-- **Build standard** (build + vérifications uniquement) : *Build Now* sans
-  toucher aux paramètres — `REGISTRY` vide, `DEPLOY` décoché.
-- **Avec push d'images** : *Build with Parameters* → renseigner `REGISTRY`
-  (ex. `registry.example.com/taskmanager`).
-- **Avec déploiement** : *Build with Parameters* → cocher `DEPLOY` (en plus
-  de `REGISTRY` si vous voulez aussi pousser les images avant de déployer).
-  Ne fonctionne que sur la branche `main`.
-
----
-
-## Section 5 — Dépannage
-
-**`docker: command not found` / `permission denied while trying to connect to the Docker daemon socket`**
-→ Docker n'est pas installé sur l'agent, ou l'utilisateur système de Jenkins
-n'est pas dans le groupe `docker`. Si Jenkins tourne lui-même en conteneur,
-il doit avoir le socket `/var/run/docker.sock` monté (et Docker installé
-dans son image).
-
-**Stage "Préparer .env" échoue (`ERROR: ... taskmanager-env`)**
-→ La credential `taskmanager-env` (type *Secret file*) n'existe pas encore,
-ou son ID ne correspond pas exactement. Voir Section 1.
-
-**Stage "Vérifications" → back échoue sur `lint:container`**
-→ Ce stage utilise `--entrypoint sh` pour éviter que `entrypoint.sh`
-n'attende indéfiniment une base MySQL absente (`--no-deps`). Si l'erreur
-vient d'ailleurs (variable d'environnement manquante par exemple), vérifiez
-que `.env` contient bien toutes les clés de `.env.docker.example` — Doctrine
-a besoin d'une `DATABASE_URL` syntaxiquement valide même pour compiler le
-container, pas besoin que MySQL réponde.
-
-**Stage "Push images" sauté alors que vous vouliez pousser**
-→ Vérifiez que vous êtes bien sur la branche `main` **et** que le paramètre
-`REGISTRY` est renseigné au lancement (*Build with Parameters*, pas *Build
-Now*, qui reprend la valeur par défaut vide).
-
-**Stage "Déploiement" : `Host key verification failed`**
-→ `StrictHostKeyChecking=no` est déjà passé dans le `Jenkinsfile` pour éviter
-ça en usage normal ; si l'erreur persiste, le serveur cible a peut-être
-changé de clé d'hôte récemment (rotation, réinstallation) — rien à voir avec
-Jenkins lui-même.
-
----
-
-## Résumé des fichiers créés
+## 1. Contenu de `jenkins/`
 
 | Fichier | Rôle |
 |---|---|
-| `Jenkinsfile` | Pipeline déclaratif : checkout → .env → build images → vérifications (front + back en parallèle) → push optionnel → déploiement optionnel |
-| `JENKINS.md` | Ce guide |
+| `Dockerfile` | Jenkins LTS 2.580.1 + client Docker / Compose + plugins |
+| `plugins.txt` | Pipeline, Git, Configuration as Code, Job DSL, **Stage View**, **Pipeline Graph View**, horodatage des logs |
+| `casc.yaml` | Compte admin, credential `taskmanager-env`, job `taskmanager` (paramètres, surveillance du dépôt) |
+| `docker-compose.yml` | Conteneur Jenkins : port, socket Docker de l'hôte, `.env` de prod monté en lecture seule |
+| `.env.example` | Réglages à copier en `jenkins/.env` (non versionné) |
 
-## Credentials à créer avant le premier build
+Le pipeline lui-même est le `Jenkinsfile` à la racine du dépôt.
 
-`taskmanager-env` (obligatoire) ; `taskmanager-registry-creds`,
-`taskmanager-deploy-ssh`, `taskmanager-deploy-host` (seulement si vous
-utilisez le push/déploiement) — détail des types en Section 1.
+---
 
-## Lancer un build standard
+## 2. Installation sur le serveur (une seule fois)
 
-*Build Now* sur le job (Multibranch ou Pipeline classique) une fois le dépôt
-poussé et la credential `taskmanager-env` créée.
+Prérequis : Docker et Docker Compose v2 installés sur le serveur. C'est déjà
+le cas, puisque la prod y tourne.
 
-## Points d'attention
+```bash
+cd ~/projet/Soutenance
+git pull origin master
 
-- **Aucun remote Git configuré aujourd'hui** sur ce projet (`front/` et
-  `back/` ont des `.git` locaux séparés, sans origin) — à résoudre avant de
-  créer le job Jenkins (voir l'encart en haut du document).
-- **`params.REGISTRY`/`params.DEPLOY` sont vides/false par défaut** : un
-  premier build "ne casse rien" (pas de push, pas de déploiement) tant que
-  vous ne les renseignez pas explicitement.
-- **Pas de suite de tests réelle** dans ce projet actuellement : le stage
-  *Vérifications* ne fait que des contrôles statiques déjà disponibles — ce
-  n'est pas un oubli, voir Section 3.
-- **Le serveur de déploiement (`taskmanager-deploy-host`) n'existe pas
-  encore** dans ce qui a été configuré jusqu'ici dans ce projet — le stage
-  `Déploiement` est un squelette à adapter à votre infrastructure réelle
-  (chemin `/opt/taskmanager/`, utilisateur SSH...) avant la première
-  utilisation avec `DEPLOY=true`.
+# 1. Libérer le port 8080 si l'ancien Jenkins l'occupe (installation système) :
+sudo systemctl stop jenkins && sudo systemctl disable jenkins
+#    (ou garder l'ancien et mettre JENKINS_PORT=8081 à l'étape 2)
+
+# 2. Réglages
+cp jenkins/.env.example jenkins/.env
+nano jenkins/.env
+```
+
+À renseigner dans `jenkins/.env` :
+
+| Variable | Valeur |
+|---|---|
+| `JENKINS_ADMIN_ID` / `JENKINS_ADMIN_PASSWORD` | Compte de l'interface (mot de passe fort) |
+| `JENKINS_PORT` / `JENKINS_URL` | `8080` / `http://<IP du serveur>:8080/` |
+| `PROD_ENV_FILE` | Chemin **absolu** du `.env` de prod, ex. `/home/mao/projet/Soutenance/.env` |
+| `PROD_PROJECT` | Projet Compose de la prod, affiché par `docker compose ls` (en général `soutenance`) |
+| `DOCKER_GID` | Résultat de `getent group docker \| cut -d: -f3` |
+
+```bash
+# 3. Démarrage (construit l'image Jenkins, environ 2 minutes la première fois)
+docker compose -f jenkins/docker-compose.yml up -d --build
+
+# 4. Pare-feu, si l'interface doit être ouverte depuis le réseau
+sudo ufw allow 8080/tcp
+```
+
+Ouvrir ensuite **http://\<IP du serveur\>:8080/** et se connecter avec le compte
+de `jenkins/.env`. Le job **taskmanager** est déjà là. Cliquer sur
+**Build with Parameters**, puis **Build**, pour lancer le premier build.
+
+### Variante Windows (Docker Desktop), avec le dev sur la même machine
+
+La prod déployée par Jenkins est **séparée** du dev. Elle tourne dans son
+propre projet Compose, `taskmanager-prod`, sur le port **8088**, avec sa
+propre base. Le dev reste intact (port 80, Adminer sur 8080, Mailpit sur
+8025), et Jenkins prend le port **8090**.
+
+1. `.env.prod` (non versionné) à la racine : copie de `.env.docker.example`
+   avec `APP_ENV=prod`, `HTTP_PORT=8088`, `MAILER_DSN=null://null` et de vrais
+   secrets.
+2. `jenkins/.env` (non versionné) :
+   ```
+   JENKINS_PORT=8090
+   JENKINS_URL=http://<IP du PC>:8090/
+   PROD_ENV_FILE=D:/WORK/OTHER/Stage/Mao/Soutenance/.env.prod
+   PROD_PROJECT=taskmanager-prod
+   DOCKER_GID=0
+   ```
+   Sur Docker Desktop, le socket Docker appartient au groupe 0. Dans le
+   chemin du fichier, utiliser des barres obliques `/`.
+3. Dans PowerShell, depuis la racine du projet :
+   ```powershell
+   docker compose -f jenkins/docker-compose.yml up -d --build
+   # accès depuis le réseau (PowerShell administrateur, une seule fois) :
+   New-NetFirewallRule -DisplayName 'Jenkins 8090' -Direction Inbound -Protocol TCP -LocalPort 8090 -Action Allow
+   New-NetFirewallRule -DisplayName 'TaskManager prod 8088' -Direction Inbound -Protocol TCP -LocalPort 8088 -Action Allow
+   ```
+4. Interface : **http://\<IP du PC\>:8090/**. Prod : **http://\<IP du PC\>:8088/**.
+   Comptes initiaux de la prod : ceux créés par les migrations, par exemple
+   `admin@taskmanager.local` / `ChangeMe!2026`, à changer.
+
+Jenkins et la prod ne tournent que si Docker Desktop est démarré : activer
+*Settings → General → Start Docker Desktop when you sign in*.
+
+---
+
+## 3. Les étapes du pipeline
+
+| Étape | Ce qu'elle fait | Quand |
+|---|---|---|
+| Checkout | Récupère le commit à construire | Toujours |
+| Préparer .env | Copie le `.env` de prod (credential `taskmanager-env`) dans l'espace de travail | Toujours |
+| Build images | `docker compose -f docker-compose.prod.yml build` (back, front, nginx) | Toujours |
+| Vérifications → Front | `npm run typecheck` + `npm run lint` dans l'image du front | Toujours (en parallèle) |
+| Vérifications → Back | `composer validate`, `lint:yaml`, `lint:container` dans l'image du back | Toujours (en parallèle) |
+| Push images | Envoi vers un registre Docker | `master` + paramètre `REGISTRY` renseigné |
+| Accès MySQL | `./sync_mysql_credentials.sh` : réaligne les comptes MySQL sur le `.env` si besoin (sinon sans effet) | `master` + `DEPLOY` coché |
+| Sauvegarde base | `mysqldump` compressé, vérifié (début et fin du dump), **archivé dans le build** | `master` + `DEPLOY` |
+| Déploiement | `docker compose up -d --wait` : recrée ce qui a changé et attend que tout soit sain (migrations jouées au démarrage du back) | `master` + `DEPLOY` |
+| Contrôle post-déploiement | Migrations à jour, API, front et page de connexion répondent | `master` + `DEPLOY` |
+
+Une étape en échec arrête la suite. Si la sauvegarde est invalide, rien
+n'est déployé. Une étape en rouge dans la vue indique où regarder.
+
+Il n'existe pas encore de suite de tests automatisés (ni PHPUnit côté back, ni
+tests côté front). Les vérifications se limitent aux contrôles réellement
+disponibles : typage, lint, validité de la configuration Symfony. Ajouter une
+étape `Tests` le jour où une suite existe.
+
+---
+
+## 4. Utilisation au quotidien
+
+- **Automatique** : Jenkins interroge GitHub toutes les 5 minutes. Un nouveau
+  commit sur `master` lance un build complet, déploiement compris. Un webhook
+  est impossible, le serveur n'étant pas joignable depuis GitHub.
+- **Build manuel** : *Build with Parameters* → *Build*.
+- **Build de contrôle sans toucher à la prod** : *Build with Parameters* →
+  décocher `DEPLOY` → *Build*.
+- **Interface** :
+  - page du job : la **Stage View** montre chaque étape de chaque build, avec
+    sa durée ;
+  - **Stages** (menu de gauche) : vue graphique détaillée d'un build ;
+  - dans un build, **Console Output** : le log complet, horodaté ;
+  - les sauvegardes de la base apparaissent en *Artifacts* (10 dernières
+    gardées).
+- **Restaurer une sauvegarde**, téléchargée depuis le build :
+  ```bash
+  gunzip -c backup-<N>.sql.gz | docker compose -f docker-compose.prod.yml exec -T mysql \
+    sh -c 'mysql --default-character-set=utf8mb4 -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'
+  ```
+
+**Après une modification du `.env` de prod**, redémarrer Jenkins, qui ne le
+relit qu'au démarrage :
+`docker compose -f jenkins/docker-compose.yml restart`.
+
+**Modifier le compte admin ou un réglage** : éditer `jenkins/.env`, puis
+`docker compose -f jenkins/docker-compose.yml up -d`.
+
+---
+
+## 5. Dépannage
+
+**`permission denied while trying to connect to the Docker daemon socket`**
+→ `DOCKER_GID` ne correspond pas au groupe du socket. Le corriger avec la
+valeur de `getent group docker | cut -d: -f3`, puis relancer
+`docker compose -f jenkins/docker-compose.yml up -d`.
+
+**`Bind for 0.0.0.0:8080 failed: port is already allocated`**
+→ L'ancien Jenkins tourne encore (`sudo systemctl stop jenkins`), ou un autre
+service occupe le port : changer `JENKINS_PORT` (et `JENKINS_URL`).
+
+**Étape « Accès MySQL » en échec**
+→ Voir son log. Si la base `MYSQL_DATABASE` n'existe pas dans le volume, le
+script refuse d'agir : corriger `MYSQL_DATABASE` dans le `.env` de prod, puis
+redémarrer Jenkins.
+
+**Étape « Déploiement » en échec (`--wait` dépassé)**
+→ Un service n'est pas devenu sain. Sur le serveur :
+`docker compose -f docker-compose.prod.yml ps` puis
+`docker compose -f docker-compose.prod.yml logs back --tail 50`.
+
+**Étape « Contrôle post-déploiement » en échec**
+→ Le log indique quelle vérification a échoué : migrations, API, front ou
+connexion. Consulter les logs du service concerné comme ci-dessus.
+
+**Le job n'a pas de bouton « Build with Parameters »**
+→ Jenkins n'a pas pu appliquer `casc.yaml`. Voir
+`docker compose -f jenkins/docker-compose.yml logs jenkins | grep -i casc`.

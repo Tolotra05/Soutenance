@@ -1,0 +1,13 @@
+# Versions résolues par jenkins-plugin-cli pour la version de Jenkins de l'image.
+# Configuration as Code + création du job
+configuration-as-code
+job-dsl
+# Pipeline (Jenkinsfile) et récupération du dépôt Git
+workflow-aggregator
+git
+credentials-binding
+# Interface : vue des étapes sur la page du job + vue graphique détaillée d'un build
+pipeline-stage-view
+pipeline-graph-view
+# Horodatage des logs (option timestamps() du Jenkinsfile)
+timestamper

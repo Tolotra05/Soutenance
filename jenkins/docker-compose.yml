@@ -1,0 +1,32 @@
+# Jenkins préconfiguré (voir JENKINS.md). Depuis la racine du projet :
+#   cp jenkins/.env.example jenkins/.env      # puis le compléter
+#   docker compose -f jenkins/docker-compose.yml up -d --build
+# Interface : http://<IP du serveur>:${JENKINS_PORT}/
+name: taskmanager-jenkins
+
+services:
+  jenkins:
+    build: .
+    image: taskmanager/jenkins:local
+    restart: unless-stopped
+    ports:
+      - "${JENKINS_PORT:-8080}:8080"
+    environment:
+      JENKINS_ADMIN_ID: ${JENKINS_ADMIN_ID:?absent de jenkins/.env}
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:?absent de jenkins/.env}
+      JENKINS_URL: ${JENKINS_URL:-http://localhost:8080/}
+      REPO_URL: ${REPO_URL:-https://github.com/Tolotra05/Soutenance.git}
+      REPO_BRANCH: ${REPO_BRANCH:-master}
+      PROD_PROJECT: ${PROD_PROJECT:-soutenance}
+    # Accès au Docker de la machine : l'utilisateur jenkins doit appartenir au
+    # groupe propriétaire du socket (Linux : getent group docker | cut -d: -f3).
+    group_add:
+      - "${DOCKER_GID:?absent de jenkins/.env (getent group docker | cut -d: -f3)}"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+      # .env de prod -> credential "taskmanager-env" (voir casc.yaml)
+      - ${PROD_ENV_FILE:?absent de jenkins/.env (chemin du .env de prod)}:/run/secrets/taskmanager.env:ro
+
+volumes:
+  jenkins_home:
