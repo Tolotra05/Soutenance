@@ -5,6 +5,9 @@
 #   ./change_ip.sh                 # détecte automatiquement l'IP de la VM
 #   ./change_ip.sh 192.168.1.50    # force une IP précise
 #
+# Sous Windows, utiliser .\change_ip.cmd (équivalent PowerShell, change_ip.ps1) :
+# Windows ouvre les .sh dans un éditeur au lieu de les exécuter.
+#
 # L'application ne dépend plus de l'IP : nginx sert front et API sur la même
 # origine, le front appelle l'API en relatif (NEXT_PUBLIC_API_URL vide) et les
 # liens des e-mails reprennent l'adresse du visiteur. Un changement d'IP ne
