@@ -5,9 +5,11 @@
 FROM jenkins/jenkins:2.580.1-lts-jdk21
 
 USER root
-# Client Docker + plugin Compose seulement : le pipeline pilote le Docker de la
-# machine hôte via son socket (monté par docker-compose.yml), il ne lance pas
-# de second démon Docker.
+# Client Docker + plugins Compose et Buildx seulement : le pipeline pilote le
+# Docker de la machine hôte via son socket (monté par docker-compose.yml), il
+# ne lance pas de second démon Docker. Buildx est indispensable : sans lui,
+# Compose retombe sur l'ancien moteur de build (sans cache BuildKit), qui échoue
+# sur Docker Desktop aux COPY --from des Dockerfiles multi-étapes.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
     && install -m 0755 -d /etc/apt/keyrings \
@@ -15,7 +17,7 @@ RUN apt-get update \
     && echo "deb [signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
         > /etc/apt/sources.list.d/docker.list \
     && apt-get update \
-    && apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin \
+    && apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin docker-buildx-plugin \
     && rm -rf /var/lib/apt/lists/*
 USER jenkins
 
