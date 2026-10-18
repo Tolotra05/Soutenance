@@ -1,16 +1,21 @@
 # Environnement de DEV : code bind-monté (hot reload front & back), ports
 # exposés sur l'hôte, Adminer activé. Voir docker-compose.prod.yml pour la
 # prod (images figées, pas de volumes de code, pas d'Adminer).
+#
+# Toutes les valeurs viennent du fichier .env à la racine (copié depuis
+# .env.docker.example). La syntaxe ${VAR:?...} fait échouer `docker compose`
+# si une variable manque, au lieu de démarrer en silence avec une chaîne vide
+# (qui masquerait aussi back/.env côté Symfony).
 
 services:
   mysql:
     image: mysql:8.4
     restart: unless-stopped
     environment:
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?absent de .env (voir .env.docker.example)}
+      MYSQL_USER: ${MYSQL_USER:?absent de .env (voir .env.docker.example)}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?absent de .env (voir .env.docker.example)}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?absent de .env (voir .env.docker.example)}
     ports:
       - "${MYSQL_PORT:-3306}:3306"
     volumes:
@@ -28,16 +33,17 @@ services:
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-dev}
-      APP_SECRET: ${APP_SECRET}
-      DATABASE_URL: ${DATABASE_URL}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
-      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
-      JWT_PASSPHRASE: ${JWT_PASSPHRASE}
-      JWT_REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL}
-      CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN}
-      FRONTEND_URL: ${FRONTEND_URL}
-      DEFAULT_URI: ${DEFAULT_URI}
-      MAILER_DSN: ${MAILER_DSN}
+      APP_SECRET: ${APP_SECRET:?absent de .env (voir .env.docker.example)}
+      # Hôte = "mysql" (nom du service), jamais localhost/127.0.0.1 depuis un conteneur.
+      DATABASE_URL: ${DATABASE_URL:?absent de .env (voir .env.docker.example)}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?absent de .env (voir .env.docker.example)}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?absent de .env (voir .env.docker.example)}
+      JWT_PASSPHRASE: ${JWT_PASSPHRASE:?absent de .env (voir .env.docker.example)}
+      JWT_REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL:-2592000}
+      CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN:?absent de .env (voir .env.docker.example)}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      DEFAULT_URI: ${DEFAULT_URI:-http://localhost:8000}
+      MAILER_DSN: ${MAILER_DSN:-null://null}
     volumes:
       - ./back:/var/www/html
       # Volume nommé sur vendor/ : évite qu'un bind-mount sans vendor/ (clone
@@ -71,8 +77,8 @@ services:
       target: dev
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
-      API_URL_INTERNAL: ${API_URL_INTERNAL}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?absent de .env (voir .env.docker.example)}
+      API_URL_INTERNAL: ${API_URL_INTERNAL:-http://nginx}
     volumes:
       - ./front:/app
       - front_node_modules:/app/node_modules

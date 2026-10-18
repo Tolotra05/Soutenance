@@ -46,6 +46,12 @@ Desktop/Engine.
    cp .env.docker.example .env
    ```
 
+   Ce `.env` **à la racine** (et non `back/.env`) est celui que lit Docker
+   Compose. Il n'est pas versionné, et la pipeline Jenkins le supprime en fin
+   de build : à recréer après chaque clone. S'il manque, `docker compose`
+   s'arrête avec `required variable ... is missing a value` au lieu de démarrer
+   avec des valeurs vides.
+
 3. **Renseigner les variables** dans `.env` — la Section 6 détaille chacune
    d'elles ; en dev, les valeurs par défaut de `.env.docker.example`
    fonctionnent telles quelles (elles ne contiennent aucun vrai secret), sauf
@@ -189,6 +195,12 @@ MySQL réponde avant de continuer, et `nginx` attend que `back` soit
 `healthy`. Si ça persiste après 30-60s, regardez `docker compose logs mysql`
 (souvent un volume `mysql_data` corrompu d'un essai précédent — `docker
 compose down -v` puis relancer).
+
+**L'app « marche » mais n'utilise pas la base**
+→ Le front se rabat sur `front/lib/mock-data.ts` dès que l'API ne répond pas :
+une interface qui s'affiche ne prouve donc pas que le back tourne. Vérifiez :
+`docker compose ps` (`back` doit être `healthy`), puis
+`docker compose exec back php bin/console dbal:run-sql "SELECT COUNT(*) FROM user"`.
 
 **Permissions de fichiers (`var/` Symfony, "Permission denied")**
 → En dev, `back` tourne en root justement pour pouvoir corriger ça

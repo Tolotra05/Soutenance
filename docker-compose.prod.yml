@@ -7,19 +7,22 @@ services:
     image: mysql:8.4
     restart: unless-stopped
     environment:
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?absent de .env (voir .env.docker.example)}
+      MYSQL_USER: ${MYSQL_USER:?absent de .env (voir .env.docker.example)}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?absent de .env (voir .env.docker.example)}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?absent de .env (voir .env.docker.example)}
     # Pas de `ports:` : seuls les conteneurs du réseau interne doivent
     # atteindre MySQL, pas l'hôte ni l'extérieur.
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      # -h 127.0.0.1 force le TCP (pas "healthy" pendant l'init en --skip-networking),
+      # $$ = mot de passe lu dans le conteneur, pas écrit en clair dans la config.
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
       interval: 5s
       timeout: 5s
       retries: 20
+      start_period: 30s
 
   back:
     build:
@@ -29,16 +32,16 @@ services:
     restart: unless-stopped
     environment:
       APP_ENV: prod
-      APP_SECRET: ${APP_SECRET}
-      DATABASE_URL: ${DATABASE_URL}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
-      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
-      JWT_PASSPHRASE: ${JWT_PASSPHRASE}
-      JWT_REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL}
-      CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN}
-      FRONTEND_URL: ${FRONTEND_URL}
-      DEFAULT_URI: ${DEFAULT_URI}
-      MAILER_DSN: ${MAILER_DSN}
+      APP_SECRET: ${APP_SECRET:?absent de .env (voir .env.docker.example)}
+      DATABASE_URL: ${DATABASE_URL:?absent de .env (voir .env.docker.example)}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?absent de .env (voir .env.docker.example)}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?absent de .env (voir .env.docker.example)}
+      JWT_PASSPHRASE: ${JWT_PASSPHRASE:?absent de .env (voir .env.docker.example)}
+      JWT_REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL:-2592000}
+      CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN:?absent de .env (voir .env.docker.example)}
+      FRONTEND_URL: ${FRONTEND_URL:?absent de .env (voir .env.docker.example)}
+      DEFAULT_URI: ${DEFAULT_URI:?absent de .env (voir .env.docker.example)}
+      MAILER_DSN: ${MAILER_DSN:-null://null}
     volumes:
       # Les clés JWT sont générées une seule fois (au tout premier démarrage)
       # par l'entrypoint puis doivent survivre aux recréations du conteneur :
@@ -70,7 +73,7 @@ services:
       context: ./front
       target: runner
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?absent de .env (voir .env.docker.example)}
     image: ${REGISTRY:-taskmanager}/front:${TAG:-latest}
     restart: unless-stopped
     ports:
