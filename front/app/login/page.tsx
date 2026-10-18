@@ -101,10 +101,15 @@ export default function LoginPage() {
     }
     setLoading(true);
     const target = users.find((u) => u.email.toLowerCase() === email.trim().toLowerCase());
-    login(email, password).then((ok) => {
+    login(email, password).then((res) => {
       setLoading(false);
-      if (ok) {
+      if (res.ok) {
         router.push('/dashboard');
+      } else if (res.reason) {
+        // Server-side refusal of the account itself (pending / rejected):
+        // the credentials were right, so keep the e-mail field filled.
+        setPassword('');
+        setError(`Connexion impossible : ${res.reason.charAt(0).toLowerCase()}${res.reason.slice(1)}`);
       } else if (target && (target.accountStatus === 'pending' || target.accountStatus === 'rejected')) {
         setEmail('');
         setPassword('');
@@ -120,9 +125,10 @@ export default function LoginPage() {
   const handleDemoLogin = (account: (typeof demoAccounts)[number]) => {
     setError('');
     setDemoLoading(account.role);
-    login(account.email, account.password).then((ok) => {
+    login(account.email, account.password).then((res) => {
       setDemoLoading(null);
-      if (ok) router.push('/dashboard');
+      if (res.ok) router.push('/dashboard');
+      else if (res.reason) setError(`Connexion impossible : ${res.reason.charAt(0).toLowerCase()}${res.reason.slice(1)}`);
     });
   };
 

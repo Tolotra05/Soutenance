@@ -15,9 +15,12 @@ security:
             pattern: ^/(_profiler|_wdt|assets|build)/
             security: false
 
+        # user_checker (login, refresh, api) : seuls les comptes "active"
+        # peuvent s'authentifier -- voir App\Security\AccountStatusUserChecker.
         login:
             pattern: ^/api/login
             stateless: true
+            user_checker: App\Security\AccountStatusUserChecker
             json_login:
                 check_path: /api/login_check
                 username_path: email
@@ -28,6 +31,7 @@ security:
         refresh:
             pattern: ^/api/token/refresh
             stateless: true
+            user_checker: App\Security\AccountStatusUserChecker
             refresh_jwt:
                 check_path: /api/token/refresh
 
@@ -39,6 +43,7 @@ security:
         api:
             pattern: ^/api
             stateless: true
+            user_checker: App\Security\AccountStatusUserChecker
             jwt: ~
 
     access_control:

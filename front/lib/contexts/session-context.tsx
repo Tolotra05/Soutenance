@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
 import type { User } from '@/types';
-import { loginApi, getApiToken, clearApiToken, decodeJwtPayload, mapJwtRolesToAppRole, userApi } from '@/lib/project-api';
+import { loginApi, getApiToken, clearApiToken, decodeJwtPayload, mapJwtRolesToAppRole, userApi, ApiError } from '@/lib/project-api';
 import { useUsers, mapApiUser } from '@/lib/contexts/users-context';
 import { useNotifications } from '@/lib/contexts/notifications-context';
 
@@ -10,11 +10,17 @@ const SESSION_KEY = 'activeUserId';
 const ACTIVE_USERS_KEY = 'taskManagerActiveUsers';
 const SEED_ACTIVE_USERS = ['u-admin-1', 'u-mgr-1', 'u-emp-1', 'u-cli-1'];
 
+/**
+ * `reason`: set when the credentials were right but the server refused the
+ * account itself (pending validation / rejected) -- message to show as is.
+ */
+export type LoginResult = { ok: true } | { ok: false; reason?: string };
+
 interface SessionState {
   currentUser: User | null;
   sessionInitialized: boolean;
   apiToken: string | null;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<LoginResult>;
   logout: () => void;
   activeUserIds: string[];
   setUserActive: (userId: string, active: boolean) => void;
@@ -118,7 +124,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const login = useCallback(async (email: string, password: string): Promise<boolean> => {
+  const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {
     const trimmedEmail = email.trim();
 
     // 1. Real authentication against the Symfony backend.
@@ -165,15 +171,21 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       } catch {
         // ignore
       }
-      return true;
-    } catch {
+      return { ok: true };
+    } catch (err) {
+      // Right password, but the account itself isn't active (403 from
+      // AccountStatusUserChecker): a definitive answer from the server --
+      // never fall back to the demo dataset for this one.
+      if (err instanceof ApiError && err.status === 403 && err.body?.accountStatus) {
+        return { ok: false, reason: err.message };
+      }
       // 2. Backend unreachable, or these credentials don't exist in Symfony yet:
       // fall back to the local/demo dataset so the prototype stays usable offline.
       const user = users.find(
         (u) => u.email.toLowerCase() === trimmedEmail.toLowerCase() && u.password === password
       );
-      if (!user) return false;
-      if (user.accountStatus === 'pending' || user.accountStatus === 'rejected') return false;
+      if (!user) return { ok: false };
+      if (user.accountStatus === 'pending' || user.accountStatus === 'rejected') return { ok: false };
       setUsers((prev) => prev.map((u) =>
         u.id === user.id ? { ...u, active: true, lastActive: new Date().toISOString() } : u
       ));
@@ -184,7 +196,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       } catch {
         // ignore
       }
-      return true;
+      return { ok: true };
     }
   }, [users, setUsers]);
 
