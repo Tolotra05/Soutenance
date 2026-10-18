@@ -87,6 +87,14 @@ Desktop/Engine.
 
    (équivalent à `make migrate`)
 
+   **Import de `taskmanager.sql` (dev uniquement)** : au tout premier
+   démarrage (volume `mysql_data` vide), l'image MySQL importe
+   `taskmanager.sql` dans `MYSQL_DATABASE` (voir le montage
+   `/docker-entrypoint-initdb.d/` dans `docker-compose.yml`). Le dump contient
+   déjà `doctrine_migration_versions`, donc les migrations répondent ensuite
+   `Already at the latest version`. Pour réimporter un dump mis à jour :
+   `docker compose down -v && docker compose up -d --build`.
+
 7. **Pas de fixtures séparées** : ce projet n'utilise pas
    DoctrineFixturesBundle — les comptes et projets de démonstration sont
    injectés par les migrations elles-mêmes

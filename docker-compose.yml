@@ -20,11 +20,19 @@ services:
       - "${MYSQL_PORT:-3306}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+      # Dump importé par l'image mysql au PREMIER démarrage uniquement (volume
+      # mysql_data vide), dans la base MYSQL_DATABASE. Il contient déjà la table
+      # doctrine_migration_versions : les migrations de l'entrypoint du back
+      # n'ont donc rien à rejouer ensuite. Pour réimporter : `docker compose down -v`.
+      - ./taskmanager.sql:/docker-entrypoint-initdb.d/01-taskmanager.sql:ro
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      # -h 127.0.0.1 force le TCP : pendant l'import initial, MySQL tourne en
+      # --skip-networking et ne doit pas encore être vu comme "healthy".
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
       interval: 5s
       timeout: 5s
       retries: 20
+      start_period: 30s
 
   back:
     build:
