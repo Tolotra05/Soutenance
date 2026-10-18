@@ -9,6 +9,10 @@ import type {
 // = the local Symfony server.
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000').replace(/\/$/, '');
 const TOKEN_KEY = 'taskManagerJwt';
+const REFRESH_TOKEN_KEY = 'taskManagerRefreshToken';
+
+/** Fired on window when the session can't be renewed (SessionProvider logs out). */
+export const SESSION_EXPIRED_EVENT = 'taskmanager:session-expired';
 
 export function getApiToken(): string | null {
   if (typeof window === 'undefined') return null;
@@ -19,8 +23,21 @@ export function setApiToken(token: string) {
   if (typeof window !== 'undefined') window.localStorage.setItem(TOKEN_KEY, token);
 }
 
+function getRefreshToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage.getItem(REFRESH_TOKEN_KEY);
+}
+
+function setRefreshToken(token: string | undefined) {
+  if (typeof window === 'undefined') return;
+  if (token) window.localStorage.setItem(REFRESH_TOKEN_KEY, token);
+  else window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+}
+
 export function clearApiToken() {
-  if (typeof window !== 'undefined') window.localStorage.removeItem(TOKEN_KEY);
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(TOKEN_KEY);
+  window.localStorage.removeItem(REFRESH_TOKEN_KEY);
 }
 
 /** Thrown for any non-2xx API response: keeps the HTTP status and parsed body (still an Error, message unchanged). */
@@ -31,13 +48,68 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers);
-  headers.set('Content-Type', 'application/json');
-  const token = getApiToken();
-  if (token) headers.set('Authorization', `Bearer ${token}`);
+// Public routes: a 401 there is a real answer (bad credentials...), never an
+// expired session to renew.
+const AUTH_PATHS = ['/api/login_check', '/api/token/refresh', '/api/register', '/api/forgot-password', '/api/reset-password'];
 
-  const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+let refreshInFlight: Promise<boolean> | null = null;
+
+/**
+ * Renews the JWT (1 h TTL) with the stored refresh token. Single-flight: the
+ * backend's refresh tokens are single-use, so concurrent 401s (polling, page
+ * load fetching users + notifications + projects...) must share ONE refresh.
+ */
+function refreshApiToken(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      const refreshToken = getRefreshToken();
+      if (!refreshToken) return false;
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/token/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+        if (!response.ok) return false;
+        const body = await response.json();
+        if (!body?.token) return false;
+        setApiToken(body.token);
+        setRefreshToken(body.refresh_token);
+        return true;
+      } catch {
+        return false;
+      }
+    })().finally(() => { refreshInFlight = null; });
+  }
+  return refreshInFlight;
+}
+
+/**
+ * Sends an authenticated request; on 401 with a session in place, renews the
+ * JWT once and replays it. If the session can't be renewed (refresh token
+ * expired, account rejected...), clears it and fires SESSION_EXPIRED_EVENT --
+ * instead of the old behaviour where every call silently failed after 1 h
+ * while the UI still looked logged in, showing stale/demo data.
+ */
+async function send<T>(path: string, buildInit: () => RequestInit): Promise<T> {
+  const attempt = () => {
+    const init = buildInit();
+    const headers = new Headers(init.headers);
+    const token = getApiToken();
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    return fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+  };
+
+  let response = await attempt();
+  if (response.status === 401 && getApiToken() && !AUTH_PATHS.includes(path)) {
+    if (await refreshApiToken()) {
+      response = await attempt();
+    } else {
+      clearApiToken();
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+    }
+  }
+
   const text = await response.text();
   let body: any = null;
   try { body = text ? JSON.parse(text) : null; } catch { body = text; }
@@ -46,31 +118,28 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new ApiError(message, response.status, body);
   }
   return body as T;
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return send<T>(path, () => {
+    const headers = new Headers(init.headers);
+    headers.set('Content-Type', 'application/json');
+    return { ...init, headers };
+  });
 }
 
 /** Like request(), but for multipart/form-data: the browser sets its own Content-Type (with boundary). */
 async function requestMultipart<T>(path: string, formData: FormData, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers);
-  const token = getApiToken();
-  if (token) headers.set('Authorization', `Bearer ${token}`);
-
-  const response = await fetch(`${API_BASE_URL}${path}`, { ...init, method: init.method || 'POST', headers, body: formData });
-  const text = await response.text();
-  let body: any = null;
-  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
-  if (!response.ok) {
-    const message = body?.message || body?.error || `Erreur API (${response.status})`;
-    throw new ApiError(message, response.status, body);
-  }
-  return body as T;
+  return send<T>(path, () => ({ ...init, method: init.method || 'POST', body: formData }));
 }
 
 export async function loginApi(email: string, password: string) {
-  const result = await request<{ token: string }>('/api/login_check', {
+  const result = await request<{ token: string; refresh_token?: string }>('/api/login_check', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   });
   setApiToken(result.token);
+  setRefreshToken(result.refresh_token);
   return result;
 }
 

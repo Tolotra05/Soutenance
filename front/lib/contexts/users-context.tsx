@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import type { User, Role, MemberSpecialty, RequestStatus } from '@/types';
 import { mockUsers } from '@/lib/mock-data';
-import { employeeApi, authApi, userApi, getApiToken, decodeJwtPayload, type ApiUser } from '@/lib/project-api';
+import { employeeApi, authApi, userApi, getApiToken, decodeJwtPayload, ApiError, type ApiUser } from '@/lib/project-api';
 import { toast } from '@/hooks/use-toast';
 import { usePolling } from '@/hooks/use-polling';
 import { useNotifications } from '@/lib/contexts/notifications-context';
@@ -226,14 +226,20 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
       setUsers((prev) => [...prev, mapApiUser(created, { role: data.role })]);
       return true;
     } catch (err: any) {
-      if (getApiToken() === null && !navigator.onLine) {
-        // Truly offline: keep the demo usable without a backend.
-      } else if (err?.message && !/Failed to fetch|NetworkError/i.test(err.message)) {
+      if (err instanceof ApiError) {
         // The backend responded with a real validation error (e.g. duplicate
         // email) -- surface it instead of silently falling back.
         toast({ variant: 'destructive', title: 'Inscription refusée', description: err.message });
         return false;
       }
+      if (navigator.onLine) {
+        // Network up but API unreachable (back down, wrong URL...): say so.
+        // Faking success here used to show "Compte créé" for an account that
+        // never reached the server (no DB row, no admin notification).
+        toast({ variant: 'destructive', title: 'Serveur injoignable', description: "Le compte n'a pas été créé. Réessayez dans un instant." });
+        return false;
+      }
+      // Truly offline: keep the demo usable without a backend.
       const newUserMeta: User = {
         id: `u-${Date.now()}`,
         name: data.name,

@@ -6,7 +6,7 @@ import { motion } from 'framer-motion';
 import { Layers, Mail, Lock, Eye, EyeOff, Loader2, Sun, Moon, Shield, ShieldCheck, Briefcase, Wrench, User as UserIcon, ArrowLeft, CheckCircle2, Building2, Phone, UserPlus, KeyRound } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useTheme } from '@/lib/theme-provider';
-import { useSession } from '@/lib/contexts/session-context';
+import { useSession, SESSION_EXPIRED_FLAG } from '@/lib/contexts/session-context';
 import { useUsers } from '@/lib/contexts/users-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -87,6 +87,18 @@ export default function LoginPage() {
 
   useEffect(() => setMounted(true), []);
 
+  // Sent back here because the session could not be renewed (see SessionProvider).
+  useEffect(() => {
+    try {
+      if (window.sessionStorage.getItem(SESSION_EXPIRED_FLAG)) {
+        window.sessionStorage.removeItem(SESSION_EXPIRED_FLAG);
+        setInfo('Votre session a expiré : veuillez vous reconnecter.');
+      }
+    } catch {
+      // storage unavailable
+    }
+  }, []);
+
   useEffect(() => {
     if (currentUser && mounted) router.replace('/dashboard');
   }, [currentUser, mounted, router]);
@@ -129,6 +141,7 @@ export default function LoginPage() {
       setDemoLoading(null);
       if (res.ok) router.push('/dashboard');
       else if (res.reason) setError(`Connexion impossible : ${res.reason.charAt(0).toLowerCase()}${res.reason.slice(1)}`);
+      else setError(`Connexion impossible avec ce compte de démonstration : son mot de passe a été modifié sur ce serveur.`);
     });
   };
 

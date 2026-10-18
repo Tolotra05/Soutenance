@@ -2,11 +2,13 @@
 
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
 import type { User } from '@/types';
-import { loginApi, getApiToken, clearApiToken, decodeJwtPayload, mapJwtRolesToAppRole, userApi, ApiError } from '@/lib/project-api';
+import { loginApi, getApiToken, clearApiToken, decodeJwtPayload, mapJwtRolesToAppRole, userApi, ApiError, SESSION_EXPIRED_EVENT } from '@/lib/project-api';
 import { useUsers, mapApiUser } from '@/lib/contexts/users-context';
 import { useNotifications } from '@/lib/contexts/notifications-context';
 
 const SESSION_KEY = 'activeUserId';
+/** sessionStorage flag read by the login page to explain why the user landed there. */
+export const SESSION_EXPIRED_FLAG = 'taskManagerSessionExpired';
 const ACTIVE_USERS_KEY = 'taskManagerActiveUsers';
 const SEED_ACTIVE_USERS = ['u-admin-1', 'u-mgr-1', 'u-emp-1', 'u-cli-1'];
 
@@ -173,14 +175,18 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       }
       return { ok: true };
     } catch (err) {
-      // Right password, but the account itself isn't active (403 from
-      // AccountStatusUserChecker): a definitive answer from the server --
-      // never fall back to the demo dataset for this one.
-      if (err instanceof ApiError && err.status === 403 && err.body?.accountStatus) {
-        return { ok: false, reason: err.message };
+      // The server answered (wrong password, account pending/rejected...):
+      // that's the definitive answer. Falling back to the demo dataset here
+      // used to open a fake "admin" session on demo data whenever a demo
+      // account's password didn't match the real database.
+      if (err instanceof ApiError) {
+        clearApiToken();
+        return err.status === 403 && err.body?.accountStatus
+          ? { ok: false, reason: err.message }
+          : { ok: false };
       }
-      // 2. Backend unreachable, or these credentials don't exist in Symfony yet:
-      // fall back to the local/demo dataset so the prototype stays usable offline.
+      // 2. Backend unreachable (network error): fall back to the local/demo
+      // dataset so the prototype stays usable offline.
       const user = users.find(
         (u) => u.email.toLowerCase() === trimmedEmail.toLowerCase() && u.password === password
       );
@@ -214,6 +220,22 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       // ignore
     }
   }, [currentUserId, setUsers]);
+
+  // The JWT could not be renewed (see project-api's send()): log out for real
+  // so useAuthGuard sends the user to /login, which explains why -- rather
+  // than staying "logged in" on data that silently stopped refreshing.
+  useEffect(() => {
+    const onExpired = () => {
+      try {
+        window.sessionStorage.setItem(SESSION_EXPIRED_FLAG, '1');
+      } catch {
+        // storage unavailable
+      }
+      logout();
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
+  }, [logout]);
 
   const value = useMemo<SessionState>(() => ({
     currentUser, sessionInitialized, apiToken, login, logout, activeUserIds, setUserActive,
