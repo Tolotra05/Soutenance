@@ -3,7 +3,11 @@ import type {
   Priority, Requete, Role, Subtask, SubtaskComment, SubtaskStatus, TaskRequest,
 } from '@/types';
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+// Empty string (Docker: nginx serves front and API on one origin) = relative
+// same-origin calls ("/api/..."), which keep working whatever the server's IP
+// is -- no rebuild when it changes. Unset (plain `npm run dev` outside Docker)
+// = the local Symfony server.
+export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000').replace(/\/$/, '');
 const TOKEN_KEY = 'taskManagerJwt';
 
 export function getApiToken(): string | null {

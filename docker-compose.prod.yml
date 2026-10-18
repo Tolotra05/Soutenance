@@ -85,7 +85,9 @@ services:
       context: ./front
       target: runner
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?absent de .env (voir .env.docker.example)}
+        # Vide = appels relatifs (/api/...) : la même image marche quelle que
+        # soit l'IP du serveur (aucun rebuild quand elle change).
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
     image: ${REGISTRY:-taskmanager}/front:${TAG:-latest}
     restart: unless-stopped
     # Pas de `ports:` : joint uniquement à travers nginx.

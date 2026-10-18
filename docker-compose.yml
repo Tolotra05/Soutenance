@@ -94,7 +94,9 @@ services:
       target: dev
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?absent de .env (voir .env.docker.example)}
+      # Vide = appels relatifs (/api/...) : front et API partagent l'origine
+      # servie par nginx, donc rien à changer ni à rebuilder si l'IP change.
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
       API_URL_INTERNAL: ${API_URL_INTERNAL:-http://nginx}
       # Docker Desktop (Windows/macOS) ne propage pas les événements fichiers
       # du bind mount ./front au conteneur : sans polling, `next dev` ne voit
