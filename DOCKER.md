@@ -60,7 +60,7 @@ Desktop/Engine.
    L'application ne dépend pas de l'IP du serveur : depuis d'autres
    appareils, ouvrez simplement `http://<IP du serveur>/`. Laissez
    `NEXT_PUBLIC_API_URL` **vide** (appels relatifs) ; `FRONTEND_URL` /
-   `DEFAULT_URI` ne servent que de repli pour le CLI (`./change_ip.sh` les
+   `DEFAULT_URI` ne servent que de repli pour le CLI (`./change_ip.sh`, ou `.\change_ip.cmd` sous Windows, les
    tient à jour). Voir « IP non fixe » en Section 4.
 
 4. **Lancer la stack** :
@@ -181,10 +181,16 @@ docker compose up -d --build
    même origine, le front appelle `/api/...` en relatif et les liens des
    e-mails reprennent l'adresse du visiteur. Quand l'IP change : **aucun
    rebuild, aucun redémarrage**. Il suffit d'utiliser la nouvelle adresse,
-   et éventuellement de lancer `./change_ip.sh` pour garder `.env` à jour.
+   et éventuellement de mettre `.env` à jour :
+   - Linux / macOS : `./change_ip.sh` (ou `./change_ip.sh 192.168.X.X`) ;
+   - Windows : `.\change_ip.cmd` (ou double-clic ; `.\change_ip.cmd
+     192.168.X.X` pour forcer l'IP). Sous Windows, `./change_ip.sh` ne fait
+     qu'ouvrir le fichier dans un éditeur : le `.cmd` lance `change_ip.ps1`,
+     équivalent PowerShell qui ne dépend pas de Git Bash.
+
    Pour une adresse stable côté utilisateurs : réservation DHCP sur la box
-   (IP fixe locale) ou nom mDNS (`sudo apt install avahi-daemon`, puis
-   `http://<nom-du-serveur>.local/`).
+   (IP fixe locale), ou nom mDNS sous Linux (`sudo apt install
+   avahi-daemon`, puis `http://<nom-du-serveur>.local/`).
 
 3. **Builder les images** :
 
