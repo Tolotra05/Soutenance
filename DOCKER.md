@@ -117,14 +117,14 @@ Desktop/Engine.
    | Adminer | http://localhost:8080 | Système : MySQL, Serveur : `mysql`, Utilisateur/mdp : valeurs de `MYSQL_USER`/`MYSQL_PASSWORD` dans `.env`, Base : `MYSQL_DATABASE` |
    | Mailpit (dev) | http://localhost:8025 | Aucun — boîte de test : tous les e-mails envoyés par le back y arrivent (rien ne part réellement) |
 
-   **Validation des comptes** : un `client` est actif dès l'inscription ; un
-   `membre` / `chef de projet` est `pending` et **ne peut pas se connecter**
-   (403 « en attente de validation ») tant qu'un admin ne l'a pas validé. Un
-   compte refusé ne peut plus se connecter, et son jeton déjà émis est coupé
-   (`App\Security\AccountStatusUserChecker`).
+   **Validation des comptes** : **tout** compte créé via l'inscription
+   (`client`, `membre`, `chef de projet`) est `pending` et **ne peut pas se
+   connecter** (403 « en attente de validation ») tant qu'un admin ne l'a pas
+   validé. Un compte refusé ne peut plus se connecter, et son jeton déjà émis
+   est coupé (`App\Security\AccountStatusUserChecker`). Seuls les comptes
+   créés par un admin (page Équipe) sont actifs directement.
 
-   **Notifications « compte en attente »** : quand un `membre` / `chef de
-   projet` s'inscrit (statut `pending`), chaque admin actif reçoit une
+   **Notifications « compte en attente »** : à chaque inscription, chaque admin actif reçoit une
    notification dans l'app (cloche + toast, rafraîchis toutes les 60 s), le
    lien **Utilisateurs** affiche un badge orange (nombre de comptes en
    attente, vérifié toutes les 30 s), et un e-mail part aux admins

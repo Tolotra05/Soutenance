@@ -16,9 +16,15 @@ function isAdminSession(): boolean {
   return !!token && (decodeJwtPayload(token)?.roles ?? []).includes('ROLE_ADMIN');
 }
 
-export function mapApiUser(api: ApiUser, existing?: Partial<User>): User {
+// `_existing`: kept for call-site compatibility; the role now comes from the API data alone.
+export function mapApiUser(api: ApiUser, _existing?: Partial<User>): User {
   const roles = api.roles ?? [];
-  const role: Role = roles.includes('ROLE_ADMIN') ? 'admin' : roles.includes('ROLE_CHEF_DE_PROJET') ? 'chef_de_projet' : (existing?.role === 'client' || existing?.role === 'membre') ? existing.role : 'membre';
+  // No ROLE_CLIENT server-side: clients and membres both have no elevated
+  // role, and the backend guarantees a membre always has a memberSpecialty
+  // while nobody else does (AuthController, EmployeeController, UserController).
+  // Previously every such API user defaulted to 'membre', so real clients
+  // showed up as membres (e.g. the admin's "Clients" filter stayed at 0).
+  const role: Role = roles.includes('ROLE_ADMIN') ? 'admin' : roles.includes('ROLE_CHEF_DE_PROJET') ? 'chef_de_projet' : api.memberSpecialty ? 'membre' : 'client';
   return {
     id: api.id,
     name: api.name,
@@ -213,7 +219,8 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
   // the backend is unreachable -- unlike the other actions here, which gate
   // on an existing apiToken.
   const register: UsersState['register'] = useCallback(async (data) => {
-    const needsApproval = data.role !== 'client';
+    // Every self-registered account (client included) waits for an admin --
+    // same rule as AuthController::register on the backend.
     try {
       const created = await authApi.register(data);
       setUsers((prev) => [...prev, mapApiUser(created, { role: data.role })]);
@@ -238,18 +245,16 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
         phone: data.phone ?? '',
         company: data.company,
         bio: data.bio,
-        accountStatus: needsApproval ? 'pending' : 'active',
+        accountStatus: 'pending',
         createdAt: new Date().toISOString(),
       };
       setUsers((prev) => [...prev, newUserMeta]);
-      if (needsApproval) {
-        pushNotification({
-          userId: 'u-admin-1',
-          type: 'account_created',
-          title: 'Nouveau compte employé',
-          message: `« ${data.name} » a créé un compte ${data.role === 'chef_de_projet' ? 'chef de projet' : 'membre'}. À valider.`,
-        });
-      }
+      pushNotification({
+        userId: 'u-admin-1',
+        type: 'account_created',
+        title: 'Nouveau compte à valider',
+        message: `« ${data.name} » a créé un compte ${data.role === 'chef_de_projet' ? 'chef de projet' : data.role}. À valider.`,
+      });
       return true;
     }
   }, [pushNotification]);

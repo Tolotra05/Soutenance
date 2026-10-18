@@ -102,7 +102,7 @@ export default function AdminUsersPage() {
         <Card className="mb-6 border-warning/30 bg-warning/[0.04] p-5">
           <div className="flex items-center gap-2 mb-4">
             <Inbox className="h-4 w-4 text-warning" />
-            <h3 className="font-semibold text-sm">Comptes employés à valider</h3>
+            <h3 className="font-semibold text-sm">Comptes à valider</h3>
             <span className="ml-auto rounded-full bg-warning/15 text-warning text-[11px] font-bold px-2 py-0.5">
               {pendingUsers.length}
             </span>
@@ -118,6 +118,7 @@ export default function AdminUsersPage() {
                 <div className="hidden sm:flex flex-col items-end gap-0.5">
                   <RoleBadge role={u.role} />
                   {u.memberSpecialty && <span className="text-[10px] text-muted-foreground">{u.memberSpecialty}</span>}
+                  {u.role === 'client' && u.company && <span className="text-[10px] text-muted-foreground">{u.company}</span>}
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <button

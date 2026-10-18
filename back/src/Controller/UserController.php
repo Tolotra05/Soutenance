@@ -149,6 +149,17 @@ class UserController extends AbstractController
         }
         $this->applyProfileFields($target, $data);
 
+        // Same invariant as registration / EmployeeController: a membre always
+        // has a memberSpecialty, nobody else does -- with no ROLE_CLIENT, it's
+        // what tells a client and a membre apart (both have no elevated role).
+        if (isset($data['role'])) {
+            if ($data['role'] !== 'membre') {
+                $target->setMemberSpecialty(null);
+            } elseif ($target->getMemberSpecialty() === null) {
+                return $this->json(['message' => 'Précisez la spécialité du membre.'], 400);
+            }
+        }
+
         $em->flush();
 
         return $this->json($this->serialize($target));
