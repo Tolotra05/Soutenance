@@ -252,10 +252,18 @@ compose down -v` puis relancer).
 `MYSQL_PASSWORD` qu'à la **première** initialisation du volume `mysql_data` :
 changer ces valeurs ensuite ne modifie pas les comptes existants. Pour
 réaligner les comptes sur `.env` sans toucher aux données :
-`./sync_mysql_credentials.sh` (Linux / macOS) ou `.\sync_mysql_credentials.cmd`
-(Windows, double-clic possible). Le fichier compose (dev ou prod) est détecté
-d'après le conteneur MySQL en place ; on peut l'imposer en argument
-(`docker-compose.yml`). Sans effet si les accès sont déjà bons.
+
+| Cible | Linux / macOS | Windows |
+|---|---|---|
+| Prod | `./sync_mysql_credentials.sh --prod` | `.\sync_mysql_credentials.cmd -Prod` |
+| Dev | `./sync_mysql_credentials.sh docker-compose.yml` | `.\sync_mysql_credentials.cmd docker-compose.yml` |
+
+`--prod` / `-Prod` prend `docker-compose.prod.yml`, `.env.prod` s'il existe
+(sinon `.env`) et le projet `PROD_PROJECT` de `jenkins/.env` s'il existe. Sur
+une machine où dev et prod cohabitent, ne pas viser la prod avec le seul nom
+du fichier compose : Compose lirait `.env` et le projet du dossier, donc ceux
+du dev. Options explicites : `--env-file` / `-EnvFile` et `-p` / `-Project`.
+Sans effet si les accès sont déjà bons.
 
 **L'app « marche » mais n'utilise pas la base**
 → Le front se rabat sur `front/lib/mock-data.ts` dès que l'API ne répond pas :
