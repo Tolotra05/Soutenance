@@ -10,6 +10,7 @@
 #
 # Stages:
 #   composer   -> resolve PHP deps in isolation (cached independently of code/PHP-ext changes)
+#   composer-dev -> same + require-dev + autoloader, for the dev image
 #   php-base   -> PHP + extensions + php.ini shared by dev and prod
 #   dev        -> docker-compose.yml: code bind-mounted over this, vendor baked in as a fallback
 #   prod       -> docker-compose.prod.yml: code copied in, optimized autoloader, non-root
@@ -22,6 +23,14 @@ COPY composer.json composer.lock symfony.lock ./
 # need the full app (src/, config/, bin/console), not copied yet at this
 # stage -- they run naturally when the app boots instead.
 RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-interaction
+
+# ---------------------------------------------------------------------------
+# The dev image has no `composer dump-autoload` step like prod does, so it
+# needs a vendor/ that already contains autoload.php / autoload_runtime.php,
+# plus require-dev packages (MakerBundle is enabled for APP_ENV=dev in
+# config/bundles.php and would otherwise crash the kernel on boot).
+FROM composer AS composer-dev
+RUN composer install --no-scripts --prefer-dist --no-interaction
 
 # ---------------------------------------------------------------------------
 FROM php:8.3-fpm-alpine AS php-base
@@ -40,7 +49,11 @@ RUN apk add --no-cache \
 
 COPY docker/php/php.ini /usr/local/etc/php/conf.d/zz-app.ini
 COPY docker/php/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+# sed : retire d'éventuels CRLF (checkout Windows avec core.autocrlf=true),
+# sinon le shebang devient "#!/bin/sh\r" et le conteneur ne démarre pas.
+# .gitattributes force déjà LF sur *.sh ; ceci est un filet de sécurité.
+RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh \
+    && chmod +x /usr/local/bin/entrypoint.sh
 
 WORKDIR /var/www/html
 ENTRYPOINT ["entrypoint.sh"]
@@ -52,7 +65,9 @@ CMD ["php-fpm"]
 # first `up` -- see docker-compose.yml's `back_vendor` volume.
 FROM php-base AS dev
 ENV APP_ENV=dev
-COPY --from=composer /app/vendor ./vendor
+# composer binary: used by entrypoint.sh's fallback when vendor/ is empty.
+COPY --from=composer /usr/bin/composer /usr/bin/composer
+COPY --from=composer-dev /app/vendor ./vendor
 
 # ---------------------------------------------------------------------------
 FROM php-base AS prod

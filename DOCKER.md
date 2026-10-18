@@ -202,6 +202,15 @@ une interface qui s'affiche ne prouve donc pas que le back tourne. Vérifiez :
 `docker compose ps` (`back` doit être `healthy`), puis
 `docker compose exec back php bin/console dbal:run-sql "SELECT COUNT(*) FROM user"`.
 
+**`back` en `Restarting (127)` / `entrypoint.sh: not found`**
+→ Fins de ligne Windows (CRLF) dans `entrypoint.sh`. `.gitattributes` force
+LF et le Dockerfile retire les CR par sécurité ; sur un ancien checkout :
+`git rm --cached -r . -q && git reset --hard`, puis rebuild.
+
+**`vendor/ absent` ou classe introuvable au démarrage de `back` (dev)**
+→ Le volume `back_vendor` a été rempli par une ancienne image. Il ne se
+remplit qu'à sa création : `docker compose down -v && docker compose up -d --build`.
+
 **Permissions de fichiers (`var/` Symfony, "Permission denied")**
 → En dev, `back` tourne en root justement pour pouvoir corriger ça
 automatiquement au démarrage (voir `entrypoint.sh`, dernier bloc). Si l'erreur

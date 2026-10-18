@@ -1,0 +1,9 @@
+# Scripts shell exécutés dans des conteneurs Linux : toujours en LF, même sur
+# un checkout Windows (core.autocrlf=true). Sinon le shebang se termine par un
+# retour chariot (CR) et l'entrypoint du back ne démarre pas.
+# Idem pour le modèle de .env lu par Docker Compose.
+*.sh                text eol=lf
+.env.docker.example text eol=lf
+# Régénéré en LF par Symfony à chaque boot en dev (bind mount) : sans ça, le
+# fichier apparaît modifié dans git après chaque `docker compose up`.
+back/config/reference.php text eol=lf
