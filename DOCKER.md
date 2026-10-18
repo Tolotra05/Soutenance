@@ -181,7 +181,9 @@ docker compose up -d --build
    même origine, le front appelle `/api/...` en relatif et les liens des
    e-mails reprennent l'adresse du visiteur. Quand l'IP change : **aucun
    rebuild, aucun redémarrage**. Il suffit d'utiliser la nouvelle adresse,
-   et éventuellement de mettre `.env` à jour :
+   et éventuellement de mettre la configuration à jour. Le script met à jour
+   `.env`, ainsi que `.env.prod` et `jenkins/.env` s'ils existent (chacun avec
+   son port), puis indique ce qu'il faut redémarrer :
    - Linux / macOS : `./change_ip.sh` (ou `./change_ip.sh 192.168.X.X`) ;
    - Windows : `.\change_ip.cmd` (ou double-clic ; `.\change_ip.cmd
      192.168.X.X` pour forcer l'IP). Sous Windows, `./change_ip.sh` ne fait
