@@ -245,6 +245,16 @@ MySQL réponde avant de continuer, et `nginx` attend que `back` soit
 (souvent un volume `mysql_data` corrompu d'un essai précédent — `docker
 compose down -v` puis relancer).
 
+**`back` unhealthy / `Access denied for user` après avoir modifié `.env`**
+→ L'image MySQL n'applique `MYSQL_ROOT_PASSWORD`, `MYSQL_USER` et
+`MYSQL_PASSWORD` qu'à la **première** initialisation du volume `mysql_data` :
+changer ces valeurs ensuite ne modifie pas les comptes existants. Pour
+réaligner les comptes sur `.env` sans toucher aux données :
+`./sync_mysql_credentials.sh` (Linux / macOS) ou `.\sync_mysql_credentials.cmd`
+(Windows, double-clic possible). Le fichier compose (dev ou prod) est détecté
+d'après le conteneur MySQL en place ; on peut l'imposer en argument
+(`docker-compose.yml`). Sans effet si les accès sont déjà bons.
+
 **L'app « marche » mais n'utilise pas la base**
 → Le front se rabat sur `front/lib/mock-data.ts` dès que l'API ne répond pas :
 une interface qui s'affiche ne prouve donc pas que le back tourne. Vérifiez :
