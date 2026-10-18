@@ -233,6 +233,12 @@ persiste malgré tout, vérifiez que le volume `back_vendor` n'a pas été cré�
 par un ancien conteneur avec un autre UID : `docker compose down -v && docker
 compose up -d --build`.
 
+**Le front ne prend pas en compte mes modifications (dev, Windows/macOS)**
+→ Docker Desktop ne transmet pas les événements fichiers du bind mount
+`./front` au conteneur : `WATCHPACK_POLLING=true` (déjà dans
+`docker-compose.yml`) fait surveiller les fichiers par polling. Si vous
+l'avez retiré, remettez-le puis `docker compose up -d front`.
+
 **Cache Next.js qui "pollue" entre deux versions du code (dev)**
 → Le dossier `.next` est un volume nommé (`front_next_cache`) pour que les
 rebuilds incrémentaux de `next dev` survivent aux redémarrages du conteneur.
