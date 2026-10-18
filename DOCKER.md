@@ -57,9 +57,11 @@ Desktop/Engine.
    fonctionnent telles quelles (elles ne contiennent aucun vrai secret), sauf
    si des ports (80, 3306, 8080) sont déjà pris sur votre machine —
    changez alors `HTTP_PORT` / `MYSQL_PORT` / `ADMINER_PORT`.
-   Pour ouvrir l'application depuis d'autres appareils, mettez l'URL publique
-   (ex. `http://192.168.88.236`) dans `FRONTEND_URL`, `DEFAULT_URI` et
-   `NEXT_PUBLIC_API_URL` — ou lancez `./change_ip.sh`.
+   L'application ne dépend pas de l'IP du serveur : depuis d'autres
+   appareils, ouvrez simplement `http://<IP du serveur>/`. Laissez
+   `NEXT_PUBLIC_API_URL` **vide** (appels relatifs) ; `FRONTEND_URL` /
+   `DEFAULT_URI` ne servent que de repli pour le CLI (`./change_ip.sh` les
+   tient à jour). Voir « IP non fixe » en Section 4.
 
 4. **Lancer la stack** :
 
@@ -172,9 +174,17 @@ docker compose up -d --build
 2. **Copier le projet** sur le serveur, puis créer le `.env` de prod à partir
    de `.env.docker.example` — **avec de vrais secrets** cette fois
    (`APP_SECRET`, `MYSQL_PASSWORD`, `MYSQL_ROOT_PASSWORD`, `JWT_PASSPHRASE`),
-   et des URLs publiques réelles pour `FRONTEND_URL` / `DEFAULT_URI` /
-   `NEXT_PUBLIC_API_URL` / `CORS_ALLOW_ORIGIN` (plus la regex `localhost`
-   par défaut).
+   `NEXT_PUBLIC_API_URL` **vide**, et l'URL actuelle dans `FRONTEND_URL` /
+   `DEFAULT_URI` (simples valeurs de repli).
+
+   **IP non fixe** : rien n'est lié à l'IP. nginx sert front et API sur la
+   même origine, le front appelle `/api/...` en relatif et les liens des
+   e-mails reprennent l'adresse du visiteur. Quand l'IP change : **aucun
+   rebuild, aucun redémarrage**. Il suffit d'utiliser la nouvelle adresse,
+   et éventuellement de lancer `./change_ip.sh` pour garder `.env` à jour.
+   Pour une adresse stable côté utilisateurs : réservation DHCP sur la box
+   (IP fixe locale) ou nom mDNS (`sudo apt install avahi-daemon`, puis
+   `http://<nom-du-serveur>.local/`).
 
 3. **Builder les images** :
 
@@ -267,16 +277,15 @@ changement de `next.config.js`...), videz-le :
 **Erreur de connexion front → back / `NEXT_PUBLIC_API_URL` vs `API_URL_INTERNAL`**
 → Ce projet n'a **aucun fetch côté serveur** : toutes les pages sont des
 Client Components (`'use client'`), donc **tous** les appels API partent du
-navigateur, jamais du conteneur `front` lui-même. Seule `NEXT_PUBLIC_API_URL`
-compte aujourd'hui — et elle doit être une URL que **votre navigateur** peut
-résoudre (l'URL publique, ex. `http://192.168.88.236`), pas un nom de service Docker
-(`http://back` ou `http://nginx` ne résolvent que *depuis l'intérieur* du
-réseau Docker, jamais depuis votre machine). `API_URL_INTERNAL` est réservée
-à un futur appel serveur-à-serveur (SSR / route handler) ; la changer n'aura
-aucun effet sur le code actuel. Autre piège : `NEXT_PUBLIC_API_URL` est
-**inlinée dans le bundle JS au `next build`** (voir `front/Dockerfile`) — la
-changer dans `.env` puis juste faire `docker compose restart front` ne suffit
-**pas**, il faut rebuilder l'image (`docker compose up -d --build front`).
+navigateur, jamais du conteneur `front` lui-même. Laissez
+`NEXT_PUBLIC_API_URL` **vide** : le navigateur appelle alors `/api/...` sur
+l'adresse même de la page, servie par nginx. Si elle contient une URL, ce
+doit être une adresse que **votre navigateur** peut résoudre, jamais un nom
+de service Docker (`http://back`, `http://nginx`) ; et comme elle est
+**inlinée dans le bundle JS au `next build`** (voir `front/Dockerfile`), la
+changer impose de rebuilder le front (`docker compose up -d --build front`).
+`API_URL_INTERNAL` est réservée à un futur appel serveur-à-serveur (SSR /
+route handler) ; la changer n'aura aucun effet sur le code actuel.
 
 ---
 
@@ -295,15 +304,15 @@ changer dans `.env` puis juste faire `docker compose restart front` ne suffit
 | `JWT_SECRET_KEY` / `JWT_PUBLIC_KEY` | Chemins des clés RSA (générées automatiquement si absentes) | `%kernel.project_dir%/config/jwt/*.pem` | idem |
 | `JWT_REFRESH_TOKEN_TTL` | Durée de vie du refresh token (secondes) | `2592000` (30j) | idem, ou plus court en prod selon la politique de sécurité |
 | `CORS_ALLOW_ORIGIN` | Regex des origines autorisées (NelmioCorsBundle) | `localhost` / `127.0.0.1` | **domaine public réel** du front |
-| `FRONTEND_URL` | URL publique, utilisée par le back (liens dans les emails, etc.) | `http://localhost` | URL publique (ex. `http://192.168.88.236`) |
-| `DEFAULT_URI` | URI par défaut du back (CLI, redirections) — **même URL publique** | `http://localhost` | idem |
+| `FRONTEND_URL` | Repli pour les liens d'e-mails hors requête HTTP (CLI) ; sinon l'adresse du visiteur est utilisée | `http://localhost` | URL actuelle (`./change_ip.sh`) |
+| `DEFAULT_URI` | URI par défaut du back pour le CLI | `http://localhost` | idem |
 | `MAILER_DSN` | DSN Symfony Mailer | `smtp://mailpit:1025` (capturé par Mailpit) | DSN SMTP réel (`null://null` = aucun envoi) |
 | `MAILER_FROM` | Expéditeur des e-mails | `no-reply@taskmanager.local` | adresse autorisée par le SMTP |
 | `ADMIN_NOTIFY_EMAIL` | Destinataires de l'alerte « compte en attente » (séparés par des virgules) | vide = tous les admins actifs | idem, ou une boîte partagée |
 | `MAILPIT_PORT` | Port hôte de l'interface Mailpit | `8025` | *(service absent en prod)* |
 | `HTTP_PORT` | Seul port public : `nginx` sert le front **et** l'API (`/api/*`, `/uploads/*`) | `80` | idem |
 | `ADMINER_PORT` | Port hôte publié pour `adminer` | `8080` | *(service absent en prod)* |
-| `NEXT_PUBLIC_API_URL` | URL de l'API vue par le **navigateur**, inlinée au build — **même URL publique** | `http://localhost` | idem |
+| `NEXT_PUBLIC_API_URL` | **Vide** = appels relatifs (`/api/...`), indépendants de l'IP. Une URL n'est utile que si l'API est sur une autre origine (inlinée au build) | *(vide)* | *(vide)* |
 | `API_URL_INTERNAL` | URL interne front→back (non utilisée par le code actuel, voir Section 5) | `http://nginx` | idem |
 | `REGISTRY` / `TAG` | Préfixe/tag des images buildées en prod (`docker-compose.prod.yml`) | — | ex. `registry.example.com/taskmanager` / `2026.10.09` |
 
@@ -357,8 +366,8 @@ docker compose -f docker-compose.prod.yml up -d --build
   `admin@taskmanager.local` / `ChangeMe!2026` — à changer dès la première
   connexion en prod (aucun mécanisme de changement forcé n'existe
   actuellement).
-- **`NEXT_PUBLIC_API_URL` en prod** doit être rebuildée (pas juste
-  redémarrée) si elle change après coup — voir Section 5.
+- **`NEXT_PUBLIC_API_URL`** : à laisser vide. Renseignée, elle serait
+  inlinée au build et imposerait un rebuild à chaque changement d'IP.
 - **Sauvegardes MySQL** : le volume `mysql_data` n'est pas sauvegardé
   automatiquement par ces fichiers — mettre en place un `mysqldump`
   planifié (ou un outil dédié) avant tout usage en production réelle.

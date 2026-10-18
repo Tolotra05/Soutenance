@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
-# Adapte le projet à l'IP de la VM puis rebuild la stack de prod.
+# Met à jour .env avec l'IP actuelle de la VM (IP non fixe).
 #
 # Usage (à la racine du projet, là où se trouvent .env et docker-compose.prod.yml) :
-#   ./change-ip.sh                 # détecte automatiquement l'IP de la VM
-#   ./change-ip.sh 192.168.1.50    # force une IP précise
+#   ./change_ip.sh                 # détecte automatiquement l'IP de la VM
+#   ./change_ip.sh 192.168.1.50    # force une IP précise
+#
+# L'application ne dépend plus de l'IP : nginx sert front et API sur la même
+# origine, le front appelle l'API en relatif (NEXT_PUBLIC_API_URL vide) et les
+# liens des e-mails reprennent l'adresse du visiteur. Un changement d'IP ne
+# demande donc AUCUN rebuild ni redémarrage : ce script ne fait que garder .env
+# cohérent (valeurs de repli pour le CLI) et afficher la nouvelle URL.
 #
 # Ce que fait le script (idempotent, relançable sans risque) :
-#   1. .env : CORS_ALLOW_ORIGIN, FRONTEND_URL, DEFAULT_URI, NEXT_PUBLIC_API_URL
+#   1. .env : CORS_ALLOW_ORIGIN, FRONTEND_URL, DEFAULT_URI ; NEXT_PUBLIC_API_URL vidé
 #   2. back/config/packages/nelmio_cors.yaml : lit CORS_ALLOW_ORIGIN depuis .env
-#      (avant : origines codées en dur localhost / front.dev -> login bloqué)
 #   3. front/next.config.js : ajoute NEXT_PUBLIC_API_URL au connect-src de la CSP
-#      (avant : seuls localhost / back.dev autorisés -> appels API bloqués)
-#   4. docker compose -f docker-compose.prod.yml up -d --build
+#   4. signale le rebuild du front UNIQUEMENT si NEXT_PUBLIC_API_URL contenait
+#      encore une URL (ancienne configuration, inlinée au build)
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -45,6 +50,7 @@ NEW_IP="${1:-$(detect_ip)}"
 
 OLD_IP=$(grep -E '^FRONTEND_URL=' "$ENV_FILE" | sed -E 's|^FRONTEND_URL=https?://([^:/]+).*|\1|' || true)
 OLD_URL=$(grep -E '^FRONTEND_URL=' "$ENV_FILE" | cut -d= -f2- || true)
+OLD_API_URL=$(grep -E '^NEXT_PUBLIC_API_URL=' "$ENV_FILE" | cut -d= -f2- || true)
 
 # Front et API partagent une seule URL publique, servie par nginx sur HTTP_PORT.
 HTTP_PORT=$(grep -E '^HTTP_PORT=' "$ENV_FILE" | cut -d= -f2- || true)
@@ -67,11 +73,13 @@ set_var() {  # set_var CLE VALEUR : remplace la ligne si elle existe, sinon l'aj
   fi
 }
 
-if [ "$OLD_URL" != "$NEW_URL" ]; then
+if [ "$OLD_URL" != "$NEW_URL" ] || [ -n "$OLD_API_URL" ]; then
   set_var CORS_ALLOW_ORIGIN "'^http://$NEW_IP(:[0-9]+)?\$'"
   set_var FRONTEND_URL      "$NEW_URL"
   set_var DEFAULT_URI       "$NEW_URL"
-  set_var NEXT_PUBLIC_API_URL "$NEW_URL"
+  # Vide = appels relatifs : surtout PAS l'IP, sinon il faudrait rebuilder le
+  # front à chaque changement d'IP.
+  set_var NEXT_PUBLIC_API_URL ""
   CHANGED=1
   echo "[.env] mis à jour :"
   grep -E '^(CORS_ALLOW_ORIGIN|FRONTEND_URL|DEFAULT_URI|NEXT_PUBLIC_API_URL)=' "$ENV_FILE" | sed 's/^/    /'
@@ -107,21 +115,20 @@ else
   echo "[$NEXT_FILE] introuvable, ignoré"
 fi
 
-# --- 4. Rebuild -------------------------------------------------------------
-if [ "$CHANGED" -eq 0 ]; then
-  echo
-  echo "Tout est déjà à jour, rien à reconstruire."
-  exit 0
+# --- 4. Rebuild ? ------------------------------------------------------------
+echo
+if [ -n "$OLD_API_URL" ]; then
+  echo "NEXT_PUBLIC_API_URL valait '$OLD_API_URL' (ancienne configuration, inlinée"
+  echo "dans le front) : rebuild du front nécessaire UNE fois (build sans coupure,"
+  echo "puis quelques secondes de coupure du front le temps de le recréer) :"
+  echo "  ${COMPOSE[*]} build front && ${COMPOSE[*]} up -d --no-deps front"
+  echo "(ajouter '-f green.yml -p <projet>' si la stack tourne sous un autre projet)"
+else
+  echo "Aucun rebuild ni redémarrage nécessaire : l'application ne dépend pas de l'IP."
 fi
 
 echo
-echo "Rebuild de la stack (environ 3 min pour le front)..."
-"${COMPOSE[@]}" up -d --build
-
-echo
-"${COMPOSE[@]}" ps
-echo
-echo "Terminé."
+echo "Application accessible sur :"
 echo "  Front : $NEW_URL/"
 echo "  API   : $NEW_URL/api/doc"
 
