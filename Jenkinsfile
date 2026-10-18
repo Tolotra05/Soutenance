@@ -156,11 +156,33 @@ pipeline {
         stage('Déploiement') {
             when { expression { deploying() } }
             steps {
-                // Ne recrée que les conteneurs dont l'image ou la config a changé ;
-                // --wait attend que mysql et back soient "healthy" (migrations
-                // jouées au démarrage de back) et échoue sinon.
-                sh '$DC up -d --wait --wait-timeout 300'
-                sh '$DC ps'
+                // 1. MySQL : recréé seulement si sa configuration change (la base
+                //    reste dans son volume).
+                // 2. back, front, nginx : TOUJOURS recréés avec les images qui
+                //    viennent d'être construites. "up -d" seul ne suffit pas :
+                //    Compose compare l'image à une empreinte enregistrée sur le
+                //    conteneur qui, avec le stockage d'images containerd (Docker
+                //    Desktop), ne correspond pas à l'image réelle. Il laissait
+                //    alors tourner l'ancienne version du front et de nginx.
+                // --wait attend que tout soit sain (migrations jouées au
+                // démarrage de back) et échoue sinon.
+                sh '''
+                    $DC up -d --wait --wait-timeout 300 mysql
+                    $DC up -d --wait --wait-timeout 300 --no-deps --force-recreate back front nginx
+                    $DC ps
+                '''
+                // Contrôle : chaque service tourne bien sur l'image de ce build.
+                sh '''
+                    # Noms des images : ${REGISTRY:-taskmanager}/<service>:${TAG:-latest} (docker-compose.prod.yml)
+                    reg=$(grep -E '^REGISTRY=' .env | cut -d= -f2-); reg=${reg:-taskmanager}
+                    tag=$(grep -E '^TAG=' .env | cut -d= -f2-); tag=${tag:-latest}
+                    for s in back front nginx; do
+                        running=$(docker inspect "$($DC ps -q $s)" --format '{{.Image}}')
+                        built=$(docker image inspect "$reg/$s:$tag" --format '{{.Id}}')
+                        [ "$running" = "$built" ] || { echo "$s ne tourne pas sur l'image de ce build"; exit 1; }
+                        echo "$s : image de ce build (${built#sha256:})" | cut -c1-40
+                    done
+                '''
             }
         }
 
