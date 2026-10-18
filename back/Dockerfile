@@ -79,8 +79,8 @@ COPY --from=composer /app/vendor ./vendor
 COPY --from=composer /usr/bin/composer /usr/bin/composer
 COPY . .
 RUN composer dump-autoload --classmap-authoritative --no-dev \
-    && mkdir -p var/cache var/log config/jwt \
-    && chown -R www-data:www-data var config/jwt
+    && mkdir -p var/cache var/log config/jwt public/uploads \
+    && chown -R www-data:www-data var config/jwt public/uploads
 
 # zz-opcache-prod.ini loads after zz-app.ini (alphabetical) and overrides it:
 # code is immutable once the image is built (rebuilt on every deploy instead),

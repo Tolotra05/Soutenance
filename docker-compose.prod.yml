@@ -47,6 +47,7 @@ services:
       # par l'entrypoint puis doivent survivre aux recréations du conteneur :
       # sans ça, chaque déploiement invaliderait tous les tokens existants.
       - jwt_keys:/var/www/html/config/jwt
+      - uploads:/var/www/html/public/uploads
     depends_on:
       mysql:
         condition: service_healthy
@@ -56,6 +57,8 @@ services:
       timeout: 3s
       retries: 10
 
+  # Point d'entrée unique (URL publique) : /api, /uploads -> Symfony ; tout le
+  # reste -> Next.js. Voir back/docker/nginx/default.conf.
   nginx:
     build:
       context: ./back
@@ -63,10 +66,16 @@ services:
     image: ${REGISTRY:-taskmanager}/nginx:${TAG:-latest}
     restart: unless-stopped
     ports:
-      - "${BACK_HTTP_PORT:-8000}:80"
+      - "${HTTP_PORT:-80}:80"
+    volumes:
+      # Fichiers écrits par le back (FileUploadService) : servis directement
+      # par nginx, qui n'a sinon que le public/ figé au build de l'image.
+      - uploads:/var/www/html/public/uploads:ro
     depends_on:
       back:
         condition: service_healthy
+      front:
+        condition: service_started
 
   front:
     build:
@@ -76,11 +85,11 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?absent de .env (voir .env.docker.example)}
     image: ${REGISTRY:-taskmanager}/front:${TAG:-latest}
     restart: unless-stopped
-    ports:
-      - "${FRONT_PORT:-3000}:3000"
+    # Pas de `ports:` : joint uniquement à travers nginx.
     depends_on:
       - back
 
 volumes:
   mysql_data:
   jwt_keys:
+  uploads:

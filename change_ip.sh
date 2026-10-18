@@ -44,6 +44,14 @@ NEW_IP="${1:-$(detect_ip)}"
   || die "IP invalide ou non détectée ('$NEW_IP'). Relance : ./change-ip.sh 192.168.X.X"
 
 OLD_IP=$(grep -E '^FRONTEND_URL=' "$ENV_FILE" | sed -E 's|^FRONTEND_URL=https?://([^:/]+).*|\1|' || true)
+OLD_URL=$(grep -E '^FRONTEND_URL=' "$ENV_FILE" | cut -d= -f2- || true)
+
+# Front et API partagent une seule URL publique, servie par nginx sur HTTP_PORT.
+HTTP_PORT=$(grep -E '^HTTP_PORT=' "$ENV_FILE" | cut -d= -f2- || true)
+NEW_URL="http://$NEW_IP"
+if [ -n "$HTTP_PORT" ] && [ "$HTTP_PORT" != "80" ]; then
+  NEW_URL="$NEW_URL:$HTTP_PORT"
+fi
 
 echo "IP dans .env : ${OLD_IP:-<aucune>}"
 echo "IP de la VM  : $NEW_IP"
@@ -59,11 +67,11 @@ set_var() {  # set_var CLE VALEUR : remplace la ligne si elle existe, sinon l'aj
   fi
 }
 
-if [ "$OLD_IP" != "$NEW_IP" ]; then
-  set_var CORS_ALLOW_ORIGIN "'^http://$NEW_IP:3000\$'"
-  set_var FRONTEND_URL      "http://$NEW_IP:3000"
-  set_var DEFAULT_URI       "http://$NEW_IP:8000"
-  set_var NEXT_PUBLIC_API_URL "http://$NEW_IP:8000"
+if [ "$OLD_URL" != "$NEW_URL" ]; then
+  set_var CORS_ALLOW_ORIGIN "'^http://$NEW_IP(:[0-9]+)?\$'"
+  set_var FRONTEND_URL      "$NEW_URL"
+  set_var DEFAULT_URI       "$NEW_URL"
+  set_var NEXT_PUBLIC_API_URL "$NEW_URL"
   CHANGED=1
   echo "[.env] mis à jour :"
   grep -E '^(CORS_ALLOW_ORIGIN|FRONTEND_URL|DEFAULT_URI|NEXT_PUBLIC_API_URL)=' "$ENV_FILE" | sed 's/^/    /'
@@ -114,8 +122,8 @@ echo
 "${COMPOSE[@]}" ps
 echo
 echo "Terminé."
-echo "  Front : http://$NEW_IP:3000"
-echo "  API   : http://$NEW_IP:8000/api/doc"
+echo "  Front : $NEW_URL/"
+echo "  API   : $NEW_URL/api/doc"
 
 if [ "$PATCHED" -eq 1 ]; then
   echo

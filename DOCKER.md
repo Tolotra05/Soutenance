@@ -55,8 +55,11 @@ Desktop/Engine.
 3. **Renseigner les variables** dans `.env` — la Section 6 détaille chacune
    d'elles ; en dev, les valeurs par défaut de `.env.docker.example`
    fonctionnent telles quelles (elles ne contiennent aucun vrai secret), sauf
-   si des ports (3306, 3000, 8000, 8080) sont déjà pris sur votre machine —
-   changez alors `MYSQL_PORT` / `FRONT_PORT` / `BACK_HTTP_PORT` / `ADMINER_PORT`.
+   si des ports (80, 3306, 8080) sont déjà pris sur votre machine —
+   changez alors `HTTP_PORT` / `MYSQL_PORT` / `ADMINER_PORT`.
+   Pour ouvrir l'application depuis d'autres appareils, mettez l'URL publique
+   (ex. `http://192.168.88.236`) dans `FRONTEND_URL`, `DEFAULT_URI` et
+   `NEXT_PUBLIC_API_URL` — ou lancez `./change_ip.sh`.
 
 4. **Lancer la stack** :
 
@@ -104,10 +107,13 @@ Desktop/Engine.
 
 8. **Accéder aux services** :
 
+   Front et API partagent **une seule URL** (nginx : `/api/*` → Symfony, le
+   reste → Next.js) — ici `<URL>` = valeur de `FRONTEND_URL`.
+
    | Service | URL | Identifiants |
    |---|---|---|
-   | Front | http://localhost:3000 | Comptes de démo du front (voir `front/lib/mock-data` ou l'écran de connexion) |
-   | Back (API + doc Swagger) | http://localhost:8000/api/doc | Admin : `admin@taskmanager.local` / `ChangeMe!2026` |
+   | Front | `<URL>/` | Comptes de démo du front (voir `front/lib/mock-data` ou l'écran de connexion) |
+   | API + doc Swagger | `<URL>/api/doc` | Admin : `admin@taskmanager.local` / `ChangeMe!2026` |
    | Adminer | http://localhost:8080 | Système : MySQL, Serveur : `mysql`, Utilisateur/mdp : valeurs de `MYSQL_USER`/`MYSQL_PASSWORD` dans `.env`, Base : `MYSQL_DATABASE` |
 
 ---
@@ -179,8 +185,8 @@ docker compose up -d --build
 
    ```bash
    docker compose -f docker-compose.prod.yml ps        # tout doit être "healthy"/"running"
-   curl -I http://localhost:${BACK_HTTP_PORT}/api/doc.json
-   curl -I http://localhost:${FRONT_PORT}
+   curl -I "$FRONTEND_URL/api/doc.json"   # API (via nginx)
+   curl -I "$FRONTEND_URL/"               # front (même URL)
    ```
 
    Contrairement à la prod de ce projet sous Laragon (domaines `.dev` avec
@@ -193,9 +199,10 @@ docker compose up -d --build
 
 ## Section 5 — Dépannage
 
-**Port déjà occupé** (`Bind for 0.0.0.0:3000 failed: port is already allocated`)
-→ Changez `FRONT_PORT` / `BACK_HTTP_PORT` / `MYSQL_PORT` / `ADMINER_PORT` dans
-`.env`, puis `docker compose up -d`.
+**Port déjà occupé** (`Bind for 0.0.0.0:80 failed: port is already allocated`)
+→ Changez `HTTP_PORT` / `MYSQL_PORT` / `ADMINER_PORT` dans `.env`, puis
+`docker compose up -d`. Si `HTTP_PORT` n'est pas 80, ajoutez-le aux URL
+publiques (`http://192.168.88.236:8080`…) et rebuildez le front.
 
 **MySQL pas prêt / `back` redémarre en boucle au premier lancement**
 → Normal les premières secondes : l'entrypoint de `back` attend que le port
@@ -238,7 +245,7 @@ changement de `next.config.js`...), videz-le :
 Client Components (`'use client'`), donc **tous** les appels API partent du
 navigateur, jamais du conteneur `front` lui-même. Seule `NEXT_PUBLIC_API_URL`
 compte aujourd'hui — et elle doit être une URL que **votre navigateur** peut
-résoudre (`http://localhost:8000`), pas un nom de service Docker
+résoudre (l'URL publique, ex. `http://192.168.88.236`), pas un nom de service Docker
 (`http://back` ou `http://nginx` ne résolvent que *depuis l'intérieur* du
 réseau Docker, jamais depuis votre machine). `API_URL_INTERNAL` est réservée
 à un futur appel serveur-à-serveur (SSR / route handler) ; la changer n'aura
@@ -264,13 +271,12 @@ changer dans `.env` puis juste faire `docker compose restart front` ne suffit
 | `JWT_SECRET_KEY` / `JWT_PUBLIC_KEY` | Chemins des clés RSA (générées automatiquement si absentes) | `%kernel.project_dir%/config/jwt/*.pem` | idem |
 | `JWT_REFRESH_TOKEN_TTL` | Durée de vie du refresh token (secondes) | `2592000` (30j) | idem, ou plus court en prod selon la politique de sécurité |
 | `CORS_ALLOW_ORIGIN` | Regex des origines autorisées (NelmioCorsBundle) | `localhost` / `127.0.0.1` | **domaine public réel** du front |
-| `FRONTEND_URL` | URL du front, utilisée par le back (liens dans les emails, etc.) | `http://localhost:3000` | URL publique du front |
-| `DEFAULT_URI` | URI par défaut du back (CLI, redirections) | `http://localhost:8000` | URL publique du back |
+| `FRONTEND_URL` | URL publique, utilisée par le back (liens dans les emails, etc.) | `http://localhost` | URL publique (ex. `http://192.168.88.236`) |
+| `DEFAULT_URI` | URI par défaut du back (CLI, redirections) — **même URL publique** | `http://localhost` | idem |
 | `MAILER_DSN` | DSN Symfony Mailer | `null://null` (pas d'envoi) | DSN SMTP réel |
-| `FRONT_PORT` | Port hôte publié pour `front` | `3000` | idem (ou derrière un reverse proxy) |
-| `BACK_HTTP_PORT` | Port hôte publié pour `nginx` | `8000` | idem |
+| `HTTP_PORT` | Seul port public : `nginx` sert le front **et** l'API (`/api/*`, `/uploads/*`) | `80` | idem |
 | `ADMINER_PORT` | Port hôte publié pour `adminer` | `8080` | *(service absent en prod)* |
-| `NEXT_PUBLIC_API_URL` | URL de l'API vue par le **navigateur**, inlinée au build | `http://localhost:8000` | URL publique du back |
+| `NEXT_PUBLIC_API_URL` | URL de l'API vue par le **navigateur**, inlinée au build — **même URL publique** | `http://localhost` | idem |
 | `API_URL_INTERNAL` | URL interne front→back (non utilisée par le code actuel, voir Section 5) | `http://nginx` | idem |
 | `REGISTRY` / `TAG` | Préfixe/tag des images buildées en prod (`docker-compose.prod.yml`) | — | ex. `registry.example.com/taskmanager` / `2026.10.09` |
 
