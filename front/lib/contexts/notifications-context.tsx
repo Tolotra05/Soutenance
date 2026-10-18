@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useCallback, useMemo, useEf
 import type { AppNotification, RequestStatus } from '@/types';
 import { mockNotifications } from '@/lib/mock-data';
 import { getApiToken, notificationApi, type ApiNotification } from '@/lib/project-api';
+import { usePolling } from '@/hooks/use-polling';
 
 interface PushNotificationData {
   userId: string;
@@ -22,9 +23,15 @@ interface NotificationsState {
   pushNotification: (data: PushNotificationData) => void;
   /** @internal used by other providers to raise the same notification for several recipients */
   pushNotifications: (userIds: string[], data: Omit<PushNotificationData, 'userId'>) => void;
-  /** @internal called by SessionProvider once authenticated, to replace local/demo notifications with the real ones */
-  fetchNotifications: () => Promise<void>;
+  /**
+   * @internal called by SessionProvider once authenticated, to replace local/demo notifications with the real ones.
+   * `silent`: background refresh (polling) -- don't flip `status` to 'loading', so nothing flashes a skeleton.
+   */
+  fetchNotifications: (opts?: { silent?: boolean }) => Promise<void>;
 }
+
+/** Background refresh period for server-side notifications (no push channel, see usePolling). */
+const NOTIFICATIONS_POLL_MS = 60_000;
 
 function mapApiNotification(n: ApiNotification): AppNotification {
   return {
@@ -51,7 +58,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
   const [notifications, setNotifications] = useState<AppNotification[]>(() => (getApiToken() ? [] : mockNotifications));
   const [status, setStatus] = useState<RequestStatus>(() => (getApiToken() ? 'loading' : 'success'));
 
-  const fetchNotifications = useCallback(async () => {
+  const fetchNotifications = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
     if (!getApiToken()) {
       // Logged out: reset to the demo seed, don't leave a previous user's
       // real notifications on screen.
@@ -59,7 +66,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       setStatus('success');
       return;
     }
-    setStatus('loading');
+    if (!silent) setStatus('loading');
     try {
       const list = await notificationApi.list();
       setNotifications(list.map(mapApiNotification));
@@ -85,6 +92,12 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [fetchNotifications]);
+
+  // New server-side notifications (e.g. "account_created" for admins) reach
+  // an open page within a minute; NotificationToastListener then toasts them.
+  usePolling(() => {
+    if (getApiToken()) fetchNotifications({ silent: true });
+  }, NOTIFICATIONS_POLL_MS);
 
   // Notifications created server-side as a side effect of other actions
   // (project validated, subtask reviewed...) are picked up on the next

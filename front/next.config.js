@@ -14,7 +14,10 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://images.unsplash.com https://api.dicebear.com",
       "font-src 'self' data:",
-      "connect-src 'self' ws: wss: http://localhost:* http://127.0.0.1:* http://back.dev https://back.dev",
+      // NEXT_PUBLIC_API_URL: the public URL (e.g. http://192.168.88.236) --
+      // already covered by 'self' when nginx serves front and API together,
+      // but kept explicit for setups where the API lives on another origin.
+      "connect-src 'self' ws: wss: http://localhost:* http://127.0.0.1:* http://back.dev https://back.dev " + (process.env.NEXT_PUBLIC_API_URL || ''),
       "media-src 'self' blob:",
       "object-src 'none'",
       "base-uri 'self'",

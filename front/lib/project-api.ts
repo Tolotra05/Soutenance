@@ -19,6 +19,14 @@ export function clearApiToken() {
   if (typeof window !== 'undefined') window.localStorage.removeItem(TOKEN_KEY);
 }
 
+/** Thrown for any non-2xx API response: keeps the HTTP status and parsed body (still an Error, message unchanged). */
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number, readonly body: any) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set('Content-Type', 'application/json');
@@ -31,7 +39,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   try { body = text ? JSON.parse(text) : null; } catch { body = text; }
   if (!response.ok) {
     const message = body?.message || body?.error || `Erreur API (${response.status})`;
-    throw new Error(message);
+    throw new ApiError(message, response.status, body);
   }
   return body as T;
 }
@@ -48,7 +56,7 @@ async function requestMultipart<T>(path: string, formData: FormData, init: Reque
   try { body = text ? JSON.parse(text) : null; } catch { body = text; }
   if (!response.ok) {
     const message = body?.message || body?.error || `Erreur API (${response.status})`;
-    throw new Error(message);
+    throw new ApiError(message, response.status, body);
   }
   return body as T;
 }
@@ -260,6 +268,8 @@ export const userApi = {
   updateMe: (data: object) => request<ApiUser>('/api/users/me', { method: 'PATCH', body: JSON.stringify(data) }),
   update: (id: string, data: object) => request<ApiUser>(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   review: (id: string, decision: 'approved' | 'rejected') => request<ApiUser>(`/api/users/${id}/review`, { method: 'PATCH', body: JSON.stringify({ decision }) }),
+  /** Admin only: number of accounts waiting for validation (sidebar badge). */
+  pendingCount: () => request<{ count: number }>('/api/users/pending/count'),
 };
 
 export const authApi = {

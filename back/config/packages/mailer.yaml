@@ -1,0 +1,5 @@
+framework:
+    mailer:
+        # null://null = rien n'est envoyé. En dev Docker : smtp://mailpit:1025
+        # (boîte de test sur http://<URL publique>:8025). En prod : un vrai SMTP.
+        dsn: '%env(MAILER_DSN)%'

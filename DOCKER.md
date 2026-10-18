@@ -46,11 +46,20 @@ Desktop/Engine.
    cp .env.docker.example .env
    ```
 
+   Ce `.env` **à la racine** (et non `back/.env`) est celui que lit Docker
+   Compose. Il n'est pas versionné, et la pipeline Jenkins le supprime en fin
+   de build : à recréer après chaque clone. S'il manque, `docker compose`
+   s'arrête avec `required variable ... is missing a value` au lieu de démarrer
+   avec des valeurs vides.
+
 3. **Renseigner les variables** dans `.env` — la Section 6 détaille chacune
    d'elles ; en dev, les valeurs par défaut de `.env.docker.example`
    fonctionnent telles quelles (elles ne contiennent aucun vrai secret), sauf
-   si des ports (3306, 3000, 8000, 8080) sont déjà pris sur votre machine —
-   changez alors `MYSQL_PORT` / `FRONT_PORT` / `BACK_HTTP_PORT` / `ADMINER_PORT`.
+   si des ports (80, 3306, 8080) sont déjà pris sur votre machine —
+   changez alors `HTTP_PORT` / `MYSQL_PORT` / `ADMINER_PORT`.
+   Pour ouvrir l'application depuis d'autres appareils, mettez l'URL publique
+   (ex. `http://192.168.88.236`) dans `FRONTEND_URL`, `DEFAULT_URI` et
+   `NEXT_PUBLIC_API_URL` — ou lancez `./change_ip.sh`.
 
 4. **Lancer la stack** :
 
@@ -81,6 +90,14 @@ Desktop/Engine.
 
    (équivalent à `make migrate`)
 
+   **Import de `taskmanager.sql` (dev uniquement)** : au tout premier
+   démarrage (volume `mysql_data` vide), l'image MySQL importe
+   `taskmanager.sql` dans `MYSQL_DATABASE` (voir le montage
+   `/docker-entrypoint-initdb.d/` dans `docker-compose.yml`). Le dump contient
+   déjà `doctrine_migration_versions`, donc les migrations répondent ensuite
+   `Already at the latest version`. Pour réimporter un dump mis à jour :
+   `docker compose down -v && docker compose up -d --build`.
+
 7. **Pas de fixtures séparées** : ce projet n'utilise pas
    DoctrineFixturesBundle — les comptes et projets de démonstration sont
    injectés par les migrations elles-mêmes
@@ -90,11 +107,32 @@ Desktop/Engine.
 
 8. **Accéder aux services** :
 
+   Front et API partagent **une seule URL** (nginx : `/api/*` → Symfony, le
+   reste → Next.js) — ici `<URL>` = valeur de `FRONTEND_URL`.
+
    | Service | URL | Identifiants |
    |---|---|---|
-   | Front | http://localhost:3000 | Comptes de démo du front (voir `front/lib/mock-data` ou l'écran de connexion) |
-   | Back (API + doc Swagger) | http://localhost:8000/api/doc | Admin : `admin@taskmanager.local` / `ChangeMe!2026` |
+   | Front | `<URL>/` | Comptes de démo du front (voir `front/lib/mock-data` ou l'écran de connexion) |
+   | API + doc Swagger | `<URL>/api/doc` | Admin : `admin@taskmanager.local` / `ChangeMe!2026` |
    | Adminer | http://localhost:8080 | Système : MySQL, Serveur : `mysql`, Utilisateur/mdp : valeurs de `MYSQL_USER`/`MYSQL_PASSWORD` dans `.env`, Base : `MYSQL_DATABASE` |
+   | Mailpit (dev) | http://localhost:8025 | Aucun — boîte de test : tous les e-mails envoyés par le back y arrivent (rien ne part réellement) |
+
+   **Validation des comptes** : **tout** compte créé via l'inscription
+   (`client`, `membre`, `chef de projet`) est `pending` et **ne peut pas se
+   connecter** (403 « en attente de validation ») tant qu'un admin ne l'a pas
+   validé. Un compte refusé ne peut plus se connecter, et son jeton déjà émis
+   est coupé (`App\Security\AccountStatusUserChecker`). Seuls les comptes
+   créés par un admin (page Équipe) sont actifs directement.
+
+   **Notifications « compte en attente »** : à chaque inscription, chaque admin actif reçoit une
+   notification dans l'app (cloche + toast, rafraîchis toutes les 60 s), le
+   lien **Utilisateurs** affiche un badge orange (nombre de comptes en
+   attente, vérifié toutes les 30 s), et un e-mail part aux admins
+   (`ADMIN_NOTIFY_EMAIL`, sinon tous les admins actifs) + un e-mail de
+   confirmation à l'inscrit. Valider/refuser le compte fait disparaître
+   l'alerte chez **tous** les admins. Un échec d'envoi d'e-mail est loggé
+   (`docker compose logs back | grep "Échec de l'envoi"`) sans bloquer
+   l'inscription.
 
 ---
 
@@ -165,8 +203,8 @@ docker compose up -d --build
 
    ```bash
    docker compose -f docker-compose.prod.yml ps        # tout doit être "healthy"/"running"
-   curl -I http://localhost:${BACK_HTTP_PORT}/api/doc.json
-   curl -I http://localhost:${FRONT_PORT}
+   curl -I "$FRONTEND_URL/api/doc.json"   # API (via nginx)
+   curl -I "$FRONTEND_URL/"               # front (même URL)
    ```
 
    Contrairement à la prod de ce projet sous Laragon (domaines `.dev` avec
@@ -179,9 +217,10 @@ docker compose up -d --build
 
 ## Section 5 — Dépannage
 
-**Port déjà occupé** (`Bind for 0.0.0.0:3000 failed: port is already allocated`)
-→ Changez `FRONT_PORT` / `BACK_HTTP_PORT` / `MYSQL_PORT` / `ADMINER_PORT` dans
-`.env`, puis `docker compose up -d`.
+**Port déjà occupé** (`Bind for 0.0.0.0:80 failed: port is already allocated`)
+→ Changez `HTTP_PORT` / `MYSQL_PORT` / `ADMINER_PORT` dans `.env`, puis
+`docker compose up -d`. Si `HTTP_PORT` n'est pas 80, ajoutez-le aux URL
+publiques (`http://192.168.88.236:8080`…) et rebuildez le front.
 
 **MySQL pas prêt / `back` redémarre en boucle au premier lancement**
 → Normal les premières secondes : l'entrypoint de `back` attend que le port
@@ -190,12 +229,33 @@ MySQL réponde avant de continuer, et `nginx` attend que `back` soit
 (souvent un volume `mysql_data` corrompu d'un essai précédent — `docker
 compose down -v` puis relancer).
 
+**L'app « marche » mais n'utilise pas la base**
+→ Le front se rabat sur `front/lib/mock-data.ts` dès que l'API ne répond pas :
+une interface qui s'affiche ne prouve donc pas que le back tourne. Vérifiez :
+`docker compose ps` (`back` doit être `healthy`), puis
+`docker compose exec back php bin/console dbal:run-sql "SELECT COUNT(*) FROM user"`.
+
+**`back` en `Restarting (127)` / `entrypoint.sh: not found`**
+→ Fins de ligne Windows (CRLF) dans `entrypoint.sh`. `.gitattributes` force
+LF et le Dockerfile retire les CR par sécurité ; sur un ancien checkout :
+`git rm --cached -r . -q && git reset --hard`, puis rebuild.
+
+**`vendor/ absent` ou classe introuvable au démarrage de `back` (dev)**
+→ Le volume `back_vendor` a été rempli par une ancienne image. Il ne se
+remplit qu'à sa création : `docker compose down -v && docker compose up -d --build`.
+
 **Permissions de fichiers (`var/` Symfony, "Permission denied")**
 → En dev, `back` tourne en root justement pour pouvoir corriger ça
 automatiquement au démarrage (voir `entrypoint.sh`, dernier bloc). Si l'erreur
 persiste malgré tout, vérifiez que le volume `back_vendor` n'a pas été créé
 par un ancien conteneur avec un autre UID : `docker compose down -v && docker
 compose up -d --build`.
+
+**Le front ne prend pas en compte mes modifications (dev, Windows/macOS)**
+→ Docker Desktop ne transmet pas les événements fichiers du bind mount
+`./front` au conteneur : `WATCHPACK_POLLING=true` (déjà dans
+`docker-compose.yml`) fait surveiller les fichiers par polling. Si vous
+l'avez retiré, remettez-le puis `docker compose up -d front`.
 
 **Cache Next.js qui "pollue" entre deux versions du code (dev)**
 → Le dossier `.next` est un volume nommé (`front_next_cache`) pour que les
@@ -209,7 +269,7 @@ changement de `next.config.js`...), videz-le :
 Client Components (`'use client'`), donc **tous** les appels API partent du
 navigateur, jamais du conteneur `front` lui-même. Seule `NEXT_PUBLIC_API_URL`
 compte aujourd'hui — et elle doit être une URL que **votre navigateur** peut
-résoudre (`http://localhost:8000`), pas un nom de service Docker
+résoudre (l'URL publique, ex. `http://192.168.88.236`), pas un nom de service Docker
 (`http://back` ou `http://nginx` ne résolvent que *depuis l'intérieur* du
 réseau Docker, jamais depuis votre machine). `API_URL_INTERNAL` est réservée
 à un futur appel serveur-à-serveur (SSR / route handler) ; la changer n'aura
@@ -235,13 +295,15 @@ changer dans `.env` puis juste faire `docker compose restart front` ne suffit
 | `JWT_SECRET_KEY` / `JWT_PUBLIC_KEY` | Chemins des clés RSA (générées automatiquement si absentes) | `%kernel.project_dir%/config/jwt/*.pem` | idem |
 | `JWT_REFRESH_TOKEN_TTL` | Durée de vie du refresh token (secondes) | `2592000` (30j) | idem, ou plus court en prod selon la politique de sécurité |
 | `CORS_ALLOW_ORIGIN` | Regex des origines autorisées (NelmioCorsBundle) | `localhost` / `127.0.0.1` | **domaine public réel** du front |
-| `FRONTEND_URL` | URL du front, utilisée par le back (liens dans les emails, etc.) | `http://localhost:3000` | URL publique du front |
-| `DEFAULT_URI` | URI par défaut du back (CLI, redirections) | `http://localhost:8000` | URL publique du back |
-| `MAILER_DSN` | DSN Symfony Mailer | `null://null` (pas d'envoi) | DSN SMTP réel |
-| `FRONT_PORT` | Port hôte publié pour `front` | `3000` | idem (ou derrière un reverse proxy) |
-| `BACK_HTTP_PORT` | Port hôte publié pour `nginx` | `8000` | idem |
+| `FRONTEND_URL` | URL publique, utilisée par le back (liens dans les emails, etc.) | `http://localhost` | URL publique (ex. `http://192.168.88.236`) |
+| `DEFAULT_URI` | URI par défaut du back (CLI, redirections) — **même URL publique** | `http://localhost` | idem |
+| `MAILER_DSN` | DSN Symfony Mailer | `smtp://mailpit:1025` (capturé par Mailpit) | DSN SMTP réel (`null://null` = aucun envoi) |
+| `MAILER_FROM` | Expéditeur des e-mails | `no-reply@taskmanager.local` | adresse autorisée par le SMTP |
+| `ADMIN_NOTIFY_EMAIL` | Destinataires de l'alerte « compte en attente » (séparés par des virgules) | vide = tous les admins actifs | idem, ou une boîte partagée |
+| `MAILPIT_PORT` | Port hôte de l'interface Mailpit | `8025` | *(service absent en prod)* |
+| `HTTP_PORT` | Seul port public : `nginx` sert le front **et** l'API (`/api/*`, `/uploads/*`) | `80` | idem |
 | `ADMINER_PORT` | Port hôte publié pour `adminer` | `8080` | *(service absent en prod)* |
-| `NEXT_PUBLIC_API_URL` | URL de l'API vue par le **navigateur**, inlinée au build | `http://localhost:8000` | URL publique du back |
+| `NEXT_PUBLIC_API_URL` | URL de l'API vue par le **navigateur**, inlinée au build — **même URL publique** | `http://localhost` | idem |
 | `API_URL_INTERNAL` | URL interne front→back (non utilisée par le code actuel, voir Section 5) | `http://nginx` | idem |
 | `REGISTRY` / `TAG` | Préfixe/tag des images buildées en prod (`docker-compose.prod.yml`) | — | ex. `registry.example.com/taskmanager` / `2026.10.09` |
 

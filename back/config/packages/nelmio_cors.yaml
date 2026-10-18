@@ -1,14 +1,20 @@
+# CORS_ALLOW_ORIGIN (regex, injectée par docker-compose depuis .env) s'ajoute
+# aux origines fixes : permet d'ouvrir le front via l'IP de la machine
+# (ex. http://192.168.x.x:3000) sans toucher à ce fichier.
+parameters:
+    env(CORS_ALLOW_ORIGIN): '^https?://(localhost|127\.0\.0\.1)(:\d+)?$'
+
 nelmio_cors:
     defaults:
         origin_regex: true
-        allow_origin: ['^https?://(localhost|127\.0\.0\.1)(:\d+)?$', '^https?://([a-z0-9-]+\.)?front\.dev$']
+        allow_origin: ['^https?://(localhost|127\.0\.0\.1)(:\d+)?$', '^https?://([a-z0-9-]+\.)?front\.dev$', '%env(CORS_ALLOW_ORIGIN)%']
         allow_methods: ['GET', 'OPTIONS', 'POST', 'PUT', 'PATCH', 'DELETE']
         allow_headers: ['Content-Type', 'Authorization']
         expose_headers: ['Link']
         max_age: 3600
     paths:
         '^/api/':
-            allow_origin: ['^https?://(localhost|127\.0\.0\.1)(:\d+)?$', '^https?://([a-z0-9-]+\.)?front\.dev$']
+            allow_origin: ['^https?://(localhost|127\.0\.0\.1)(:\d+)?$', '^https?://([a-z0-9-]+\.)?front\.dev$', '%env(CORS_ALLOW_ORIGIN)%']
             allow_headers: ['Content-Type', 'Authorization']
             allow_methods: ['GET', 'OPTIONS', 'POST', 'PUT', 'PATCH', 'DELETE']
             max_age: 3600

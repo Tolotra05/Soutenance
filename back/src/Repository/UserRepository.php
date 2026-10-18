@@ -38,12 +38,15 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
      * way across MySQL/SQLite), so this filters in PHP -- fine at this
      * dataset's scale (a handful of admins among a few dozen users).
      *
+     * Only *active* admins: a pending/rejected admin account can't log in, so
+     * notifying (or emailing) it would just be noise.
+     *
      * @return User[]
      */
     public function findAdmins(): array
     {
         return array_values(array_filter(
-            $this->findAll(),
+            $this->findBy(['accountStatus' => 'active']),
             fn (User $u) => in_array('ROLE_ADMIN', $u->getRoles(), true)
         ));
     }

@@ -101,10 +101,15 @@ export default function LoginPage() {
     }
     setLoading(true);
     const target = users.find((u) => u.email.toLowerCase() === email.trim().toLowerCase());
-    login(email, password).then((ok) => {
+    login(email, password).then((res) => {
       setLoading(false);
-      if (ok) {
+      if (res.ok) {
         router.push('/dashboard');
+      } else if (res.reason) {
+        // Server-side refusal of the account itself (pending / rejected):
+        // the credentials were right, so keep the e-mail field filled.
+        setPassword('');
+        setError(`Connexion impossible : ${res.reason.charAt(0).toLowerCase()}${res.reason.slice(1)}`);
       } else if (target && (target.accountStatus === 'pending' || target.accountStatus === 'rejected')) {
         setEmail('');
         setPassword('');
@@ -120,9 +125,10 @@ export default function LoginPage() {
   const handleDemoLogin = (account: (typeof demoAccounts)[number]) => {
     setError('');
     setDemoLoading(account.role);
-    login(account.email, account.password).then((ok) => {
+    login(account.email, account.password).then((res) => {
       setDemoLoading(null);
-      if (ok) router.push('/dashboard');
+      if (res.ok) router.push('/dashboard');
+      else if (res.reason) setError(`Connexion impossible : ${res.reason.charAt(0).toLowerCase()}${res.reason.slice(1)}`);
     });
   };
 
@@ -589,9 +595,7 @@ export default function LoginPage() {
                     </div>
                     <h3 className="font-semibold text-lg mb-2">Compte créé</h3>
                     <p className="text-sm text-muted-foreground mb-6">
-                      {regRole === 'client'
-                        ? 'Votre compte client est immédiatement actif. Connectez-vous pour commencer.'
-                        : 'Votre compte employé a été transmis à un administrateur. Vous pourrez vous connecter dès sa validation.'}
+                      Votre compte a été transmis à un administrateur. Vous pourrez vous connecter dès sa validation.
                     </p>
                     <Button className="w-full h-10" onClick={() => { setMode('login'); }}>
                       Se connecter
@@ -648,7 +652,7 @@ export default function LoginPage() {
                                 <div className="flex-1 min-w-0">
                                   <p className="text-sm font-semibold">{r.label}</p>
                                   <p className="text-[11px] text-muted-foreground">
-                                    {r.role === 'client' ? 'Compte actif immédiatement' : 'Compte à valider par un administrateur'}
+                                    Compte à valider par un administrateur
                                   </p>
                                 </div>
                                 <button type="button" onClick={() => setRegStep(1)} className="text-xs text-muted-foreground hover:text-primary transition-colors">
@@ -767,17 +771,10 @@ export default function LoginPage() {
                           {regRole === 'membre' && <div className="px-3 py-2.5 text-sm"><span className="text-muted-foreground">Spécialité :</span> <span className="font-medium">{regSpecialty}</span></div>}
                         </div>
 
-                        <div className={cn(
-                          'flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-sm',
-                          regRole === 'client' ? 'border-success/30 bg-success/10 text-foreground' : 'border-warning/30 bg-warning/10 text-foreground'
-                        )}>
-                          {regRole === 'client'
-                            ? <CheckCircle2 className="h-4 w-4 text-success flex-shrink-0 mt-0.5" />
-                            : <UserPlus className="h-4 w-4 text-warning flex-shrink-0 mt-0.5" />}
+                        <div className="flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-sm border-warning/30 bg-warning/10 text-foreground">
+                          <UserPlus className="h-4 w-4 text-warning flex-shrink-0 mt-0.5" />
                           <p className="text-sm">
-                            {regRole === 'client'
-                              ? 'Votre compte client sera actif immédiatement après validation de cette étape.'
-                              : 'Votre compte employé devra être validé par un administrateur avant la première connexion.'}
+                            Votre compte devra être validé par un administrateur avant la première connexion.
                           </p>
                         </div>
 

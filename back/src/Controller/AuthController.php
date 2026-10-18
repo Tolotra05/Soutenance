@@ -4,6 +4,7 @@ namespace App\Controller;
 
 use App\Entity\User;
 use App\Repository\UserRepository;
+use App\Service\AccountNotificationMailer;
 use App\Service\NotificationService;
 use Doctrine\ORM\EntityManagerInterface;
 use OpenApi\Attributes as OA;
@@ -54,7 +55,7 @@ class AuthController extends AbstractController
             ]
         )
     )]
-    #[OA\Response(response: 201, description: "Compte créé. `accountStatus` vaut `pending` pour un rôle autre que client (validation admin requise).")]
+    #[OA\Response(response: 201, description: "Compte créé avec `accountStatus` = `pending`, quel que soit le rôle (client compris) : connexion impossible (403) tant qu'un administrateur ne l'a pas validé.")]
     #[OA\Response(response: 400, description: 'Champs manquants ou invalides.', content: new OA\JsonContent(ref: '#/components/schemas/ErrorMessage'))]
     #[OA\Response(response: 409, description: 'Un compte existe déjà avec cet e-mail.', content: new OA\JsonContent(ref: '#/components/schemas/ErrorMessage'))]
     public function register(
@@ -63,6 +64,7 @@ class AuthController extends AbstractController
         UserPasswordHasherInterface $hasher,
         EntityManagerInterface $em,
         NotificationService $notifications,
+        AccountNotificationMailer $accountMailer,
     ): JsonResponse {
         $data = json_decode($request->getContent(), true);
         if (!is_array($data)) {
@@ -92,7 +94,8 @@ class AuthController extends AbstractController
             return $this->json(['message' => 'Un compte existe déjà avec cet e-mail.'], 409);
         }
 
-        $needsApproval = $role !== 'client';
+        // A client is a user with no elevated role and no memberSpecialty (a
+        // membre always has one): that's how the front tells them apart.
         $roles = match ($role) {
             'chef_de_projet' => ['ROLE_CHEF_DE_PROJET'],
             default => [],
@@ -107,19 +110,36 @@ class AuthController extends AbstractController
         $user->setPhone(isset($data['phone']) ? (string) $data['phone'] : null);
         $user->setCompany(isset($data['company']) ? (string) $data['company'] : null);
         $user->setBio(isset($data['bio']) ? (string) $data['bio'] : null);
-        $user->setAccountStatus($needsApproval ? 'pending' : 'active');
+        // EVERY self-registered account waits for an admin, clients included
+        // (AccountStatusUserChecker refuses to log in a non-active account).
+        // Accounts created by an admin (EmployeeController) are active directly.
+        $user->setAccountStatus('pending');
         $user->setPassword($hasher->hashPassword($user, $password));
 
         $em->persist($user);
+
+        $roleLabel = match ($role) {
+            'chef_de_projet' => 'chef de projet',
+            'membre' => 'membre',
+            default => 'client',
+        };
+
+        // BEFORE flush(): push() only persist()s. Called after the flush (as
+        // it used to be), the notifications were never written and admins
+        // were never told a pending account was waiting.
+        $notifications->pushToAdmins(
+            'account_created',
+            'Nouveau compte à valider',
+            sprintf('« %s » a créé un compte %s. À valider.', $name, $roleLabel),
+            relatedUser: $user,
+        );
+
         $em->flush();
 
-        if ($needsApproval) {
-            $notifications->pushToAdmins(
-                'account_created',
-                'Nouveau compte employé',
-                sprintf('« %s » a créé un compte %s. À valider.', $name, $role === 'chef_de_projet' ? 'chef de projet' : 'membre'),
-            );
-        }
+        // After the flush, best effort: a mail failure is logged, never
+        // thrown, so it can't undo or block the registration.
+        $accountMailer->notifyAdminsOfPendingAccount($user, $roleLabel);
+        $accountMailer->confirmPendingToUser($user, $roleLabel);
 
         return $this->json($this->serialize($user), 201);
     }

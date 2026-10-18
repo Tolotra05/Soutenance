@@ -6,6 +6,12 @@
 parameters:
     frontend_url: '%env(string:FRONTEND_URL)%'
 
+    # Valeurs par défaut si la variable d'environnement est absente
+    # (ex. lancement hors Docker) -- voir AccountNotificationMailer.
+    env(MAILER_DSN): 'null://null'
+    env(MAILER_FROM): 'no-reply@taskmanager.local'
+    env(ADMIN_NOTIFY_EMAIL): ''
+
 services:
     _defaults:
         autowire: true

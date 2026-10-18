@@ -1,25 +1,38 @@
 # Environnement de DEV : code bind-monté (hot reload front & back), ports
 # exposés sur l'hôte, Adminer activé. Voir docker-compose.prod.yml pour la
 # prod (images figées, pas de volumes de code, pas d'Adminer).
+#
+# Toutes les valeurs viennent du fichier .env à la racine (copié depuis
+# .env.docker.example). La syntaxe ${VAR:?...} fait échouer `docker compose`
+# si une variable manque, au lieu de démarrer en silence avec une chaîne vide
+# (qui masquerait aussi back/.env côté Symfony).
 
 services:
   mysql:
     image: mysql:8.4
     restart: unless-stopped
     environment:
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?absent de .env (voir .env.docker.example)}
+      MYSQL_USER: ${MYSQL_USER:?absent de .env (voir .env.docker.example)}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?absent de .env (voir .env.docker.example)}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?absent de .env (voir .env.docker.example)}
     ports:
       - "${MYSQL_PORT:-3306}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+      # Dump importé par l'image mysql au PREMIER démarrage uniquement (volume
+      # mysql_data vide), dans la base MYSQL_DATABASE. Il contient déjà la table
+      # doctrine_migration_versions : les migrations de l'entrypoint du back
+      # n'ont donc rien à rejouer ensuite. Pour réimporter : `docker compose down -v`.
+      - ./taskmanager.sql:/docker-entrypoint-initdb.d/01-taskmanager.sql:ro
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      # -h 127.0.0.1 force le TCP : pendant l'import initial, MySQL tourne en
+      # --skip-networking et ne doit pas encore être vu comme "healthy".
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
       interval: 5s
       timeout: 5s
       retries: 20
+      start_period: 30s
 
   back:
     build:
@@ -28,16 +41,22 @@ services:
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-dev}
-      APP_SECRET: ${APP_SECRET}
-      DATABASE_URL: ${DATABASE_URL}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
-      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
-      JWT_PASSPHRASE: ${JWT_PASSPHRASE}
-      JWT_REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL}
-      CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN}
-      FRONTEND_URL: ${FRONTEND_URL}
-      DEFAULT_URI: ${DEFAULT_URI}
-      MAILER_DSN: ${MAILER_DSN}
+      APP_SECRET: ${APP_SECRET:?absent de .env (voir .env.docker.example)}
+      # Hôte = "mysql" (nom du service), jamais localhost/127.0.0.1 depuis un conteneur.
+      DATABASE_URL: ${DATABASE_URL:?absent de .env (voir .env.docker.example)}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?absent de .env (voir .env.docker.example)}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?absent de .env (voir .env.docker.example)}
+      JWT_PASSPHRASE: ${JWT_PASSPHRASE:?absent de .env (voir .env.docker.example)}
+      JWT_REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL:-2592000}
+      CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN:?absent de .env (voir .env.docker.example)}
+      FRONTEND_URL: ${FRONTEND_URL:?absent de .env (voir .env.docker.example)}
+      DEFAULT_URI: ${DEFAULT_URI:?absent de .env (voir .env.docker.example)}
+      # Dev : smtp://mailpit:1025 -> les e-mails sont capturés par Mailpit
+      # (service ci-dessous), jamais réellement envoyés.
+      MAILER_DSN: ${MAILER_DSN:-smtp://mailpit:1025}
+      MAILER_FROM: ${MAILER_FROM:-no-reply@taskmanager.local}
+      # Vide = tous les admins actifs reçoivent l'alerte "compte en attente".
+      ADMIN_NOTIFY_EMAIL: ${ADMIN_NOTIFY_EMAIL:-}
     volumes:
       - ./back:/var/www/html
       # Volume nommé sur vendor/ : évite qu'un bind-mount sans vendor/ (clone
@@ -53,6 +72,8 @@ services:
       timeout: 3s
       retries: 20
 
+  # Point d'entrée unique (URL publique, ex. http://192.168.88.236/) :
+  # /api, /uploads -> Symfony ; tout le reste -> Next.js. Voir default.conf.
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
@@ -60,10 +81,12 @@ services:
       - ./back:/var/www/html:ro
       - ./back/docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
-      - "${BACK_HTTP_PORT:-8000}:80"
+      - "${HTTP_PORT:-80}:80"
     depends_on:
       back:
         condition: service_healthy
+      front:
+        condition: service_started
 
   front:
     build:
@@ -71,16 +94,28 @@ services:
       target: dev
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
-      API_URL_INTERNAL: ${API_URL_INTERNAL}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?absent de .env (voir .env.docker.example)}
+      API_URL_INTERNAL: ${API_URL_INTERNAL:-http://nginx}
+      # Docker Desktop (Windows/macOS) ne propage pas les événements fichiers
+      # du bind mount ./front au conteneur : sans polling, `next dev` ne voit
+      # aucune modification et continue de servir l'ancien code.
+      WATCHPACK_POLLING: "true"
     volumes:
       - ./front:/app
       - front_node_modules:/app/node_modules
       - front_next_cache:/app/.next
-    ports:
-      - "${FRONT_PORT:-3000}:3000"
+    # Pas de `ports:` : le front n'est joint qu'à travers nginx (même origine
+    # que l'API, donc ni CORS ni URL différente selon le service).
     depends_on:
       - back
+
+  # Boîte mail de test (dev uniquement) : capture tout ce que le back envoie
+  # en SMTP sur mailpit:1025 et l'affiche sur http://<URL publique>:8025.
+  mailpit:
+    image: axllent/mailpit:v1.21.8
+    restart: unless-stopped
+    ports:
+      - "${MAILPIT_PORT:-8025}:8025"
 
   adminer:
     image: adminer:4
