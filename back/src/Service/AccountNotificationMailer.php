@@ -6,6 +6,7 @@ use App\Entity\User;
 use App\Repository\UserRepository;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\Address;
@@ -38,7 +39,21 @@ class AccountNotificationMailer
         #[Autowire('%env(MAILER_FROM)%')] private readonly string $from,
         #[Autowire('%env(ADMIN_NOTIFY_EMAIL)%')] private readonly string $adminNotifyEmail,
         #[Autowire('%frontend_url%')] private readonly string $frontendUrl,
+        private readonly RequestStack $requestStack,
     ) {
+    }
+
+    /**
+     * Base URL for links in e-mails: the scheme + host the current request
+     * came in on (front and API share one origin behind nginx), so links stay
+     * right when the server's IP changes. FRONTEND_URL is only the fallback
+     * outside an HTTP request (CLI).
+     */
+    private function baseUrl(): string
+    {
+        $request = $this->requestStack->getMainRequest();
+
+        return rtrim($request?->getSchemeAndHttpHost() ?? $this->frontendUrl, '/');
     }
 
     public function notifyAdminsOfPendingAccount(User $account, string $roleLabel): void
@@ -50,7 +65,7 @@ class AccountNotificationMailer
             $account->getName(),
             $account->getEmail(),
             $roleLabel,
-            rtrim($this->frontendUrl, '/') . '/admin/users',
+            $this->baseUrl() . '/admin/users',
         );
 
         // One e-mail per admin (not one with every admin in To:), so admins
@@ -68,7 +83,7 @@ class AccountNotificationMailer
             "Connexion : %s\n",
             $account->getName(),
             $roleLabel,
-            rtrim($this->frontendUrl, '/') . '/login',
+            $this->baseUrl() . '/login',
         );
 
         $this->send((string) $account->getEmail(), 'Votre compte est en attente de validation', $text);
