@@ -72,7 +72,7 @@ services:
       timeout: 3s
       retries: 20
 
-  # Point d'entrée unique (URL publique, ex. http://192.168.88.236/) :
+  # Point d'entrée unique (URL publique, ex. http://<IP du serveur>/) :
   # /api, /uploads -> Symfony ; tout le reste -> Next.js. Voir default.conf.
   nginx:
     image: nginx:1.27-alpine

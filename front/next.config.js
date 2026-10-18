@@ -14,9 +14,11 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://images.unsplash.com https://api.dicebear.com",
       "font-src 'self' data:",
-      // NEXT_PUBLIC_API_URL: the public URL (e.g. http://192.168.88.236) --
-      // already covered by 'self' when nginx serves front and API together,
-      // but kept explicit for setups where the API lives on another origin.
+      // NEXT_PUBLIC_API_URL is EMPTY under Docker: nginx serves front and API
+      // on one origin, so API calls are relative and covered by 'self' -- no
+      // server IP anywhere in the front. It's only appended here for setups
+      // where the API lives on another origin (e.g. `npm run dev` outside
+      // Docker against http://127.0.0.1:8000, already listed below).
       "connect-src 'self' ws: wss: http://localhost:* http://127.0.0.1:* http://back.dev https://back.dev " + (process.env.NEXT_PUBLIC_API_URL || ''),
       "media-src 'self' blob:",
       "object-src 'none'",

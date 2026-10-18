@@ -11,12 +11,16 @@ npm install
 npm run dev
 ```
 
-Par défaut, le front appelle `http://127.0.0.1:8000`.
-Pour changer l'URL :
+Lancé ainsi, hors Docker, le front appelle par défaut `http://127.0.0.1:8000`.
+Pour changer l'URL (fichier `front/.env.local`) :
 
 ```env
 NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
 ```
+
+Sous Docker (voir `DOCKER.md`), `NEXT_PUBLIC_API_URL` est **vide** : le front
+appelle l'API en relatif (`/api/...`) via nginx, sans aucune IP de serveur,
+donc rien à changer quand l'IP du serveur change.
 
 ### Backend Symfony
 

@@ -237,8 +237,9 @@ docker compose up -d --build
 
 **Port déjà occupé** (`Bind for 0.0.0.0:80 failed: port is already allocated`)
 → Changez `HTTP_PORT` / `MYSQL_PORT` / `ADMINER_PORT` dans `.env`, puis
-`docker compose up -d`. Si `HTTP_PORT` n'est pas 80, ajoutez-le aux URL
-publiques (`http://192.168.88.236:8080`…) et rebuildez le front.
+`docker compose up -d`. Si `HTTP_PORT` n'est pas 80, l'adresse devient
+`http://<IP>:<HTTP_PORT>/` : relancer `change_ip` pour mettre `.env` à jour
+(aucun rebuild du front, qui appelle l'API en relatif).
 
 **MySQL pas prêt / `back` redémarre en boucle au premier lancement**
 → Normal les premières secondes : l'entrypoint de `back` attend que le port
