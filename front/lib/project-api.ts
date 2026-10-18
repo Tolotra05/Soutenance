@@ -260,6 +260,8 @@ export const userApi = {
   updateMe: (data: object) => request<ApiUser>('/api/users/me', { method: 'PATCH', body: JSON.stringify(data) }),
   update: (id: string, data: object) => request<ApiUser>(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   review: (id: string, decision: 'approved' | 'rejected') => request<ApiUser>(`/api/users/${id}/review`, { method: 'PATCH', body: JSON.stringify({ decision }) }),
+  /** Admin only: number of accounts waiting for validation (sidebar badge). */
+  pendingCount: () => request<{ count: number }>('/api/users/pending/count'),
 };
 
 export const authApi = {

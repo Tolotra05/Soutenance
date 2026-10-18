@@ -3,6 +3,7 @@
 namespace App\Controller;
 
 use App\Entity\User;
+use App\Repository\NotificationRepository;
 use App\Service\NotificationService;
 use Doctrine\ORM\EntityManagerInterface;
 use OpenApi\Attributes as OA;
@@ -73,6 +74,18 @@ class UserController extends AbstractController
     public function list(\App\Repository\UserRepository $userRepository): JsonResponse
     {
         return $this->json(array_map(fn (User $u) => $this->serialize($u), $userRepository->findAll()));
+    }
+
+    #[Route('/api/users/pending/count', name: 'api_users_pending_count', methods: ['GET'])]
+    #[IsGranted('ROLE_ADMIN')]
+    #[OA\Response(
+        response: 200,
+        description: "Nombre de comptes en attente de validation (badge admin, interrogé en polling léger par le front).",
+        content: new OA\JsonContent(properties: [new OA\Property(property: 'count', type: 'integer', example: 2)])
+    )]
+    public function pendingCount(\App\Repository\UserRepository $userRepository): JsonResponse
+    {
+        return $this->json(['count' => $userRepository->count(['accountStatus' => 'pending'])]);
     }
 
     #[Route('/api/users/me', name: 'api_users_me', methods: ['GET'])]
@@ -152,6 +165,7 @@ class UserController extends AbstractController
         Request $request,
         EntityManagerInterface $em,
         NotificationService $notifications,
+        NotificationRepository $notificationRepository,
     ): JsonResponse {
         $data = json_decode($request->getContent(), true);
         $decision = (string) ($data['decision'] ?? '');
@@ -160,6 +174,10 @@ class UserController extends AbstractController
         }
 
         $target->setAccountStatus($decision === 'approved' ? 'active' : 'rejected');
+
+        // The account is handled: its "account_created" alert is now stale
+        // for EVERY admin, not just the one who reviewed it.
+        $notificationRepository->markReadByRelatedUser($target, 'account_created');
 
         $notifications->push(
             $target,

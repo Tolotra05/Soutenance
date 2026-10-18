@@ -34,6 +34,16 @@ class Notification
     #[ORM\JoinColumn(nullable: true, onDelete: 'CASCADE')]
     private ?Project $project = null;
 
+    /**
+     * The user this notification is *about* (not its recipient), e.g. the
+     * newly registered account behind an "account_created" notification.
+     * Lets UserController::review() mark every admin's copy as read once
+     * one admin has handled the account.
+     */
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(nullable: true, onDelete: 'CASCADE')]
+    private ?User $relatedUser = null;
+
     #[ORM\Column]
     private bool $isRead = false;
 
@@ -107,6 +117,18 @@ class Notification
     public function setProject(?Project $project): static
     {
         $this->project = $project;
+
+        return $this;
+    }
+
+    public function getRelatedUser(): ?User
+    {
+        return $this->relatedUser;
+    }
+
+    public function setRelatedUser(?User $relatedUser): static
+    {
+        $this->relatedUser = $relatedUser;
 
         return $this;
     }

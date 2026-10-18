@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useSession } from '@/lib/contexts/session-context';
 import { useNotifications } from '@/lib/contexts/notifications-context';
+import { useUsers } from '@/lib/contexts/users-context';
 import { LogoutConfirmDialog } from '@/components/shared/logout-confirm-dialog';
 import { cn } from '@/lib/utils';
 import type { Role } from '@/types';
@@ -40,6 +41,7 @@ export const Sidebar = memo(function Sidebar({ collapsed, onToggle, mobileOpen }
   const pathname = usePathname();
   const { currentUser, logout } = useSession();
   const { notifications } = useNotifications();
+  const { pendingCount } = useUsers();
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
   if (!currentUser) return null;
@@ -93,7 +95,15 @@ export const Sidebar = memo(function Sidebar({ collapsed, onToggle, mobileOpen }
               )}
             </div>
             {adminNavItems.map((item) => (
-              <NavLink key={item.href} item={item} pathname={pathname} collapsed={isCollapsed} />
+              <NavLink
+                key={item.href}
+                item={item}
+                pathname={pathname}
+                collapsed={isCollapsed}
+                unreadCount={item.href === '/admin/users' ? pendingCount : 0}
+                badgeTitle={`${pendingCount} compte${pendingCount > 1 ? 's' : ''} en attente de validation`}
+                badgeClassName="bg-warning text-warning-foreground"
+              />
             ))}
           </>
         )}
@@ -135,11 +145,14 @@ export const Sidebar = memo(function Sidebar({ collapsed, onToggle, mobileOpen }
   );
 });
 
-const NavLink = memo(function NavLink({ item, pathname, collapsed, unreadCount = 0 }: {
+const NavLink = memo(function NavLink({ item, pathname, collapsed, unreadCount = 0, badgeTitle, badgeClassName = 'bg-primary text-primary-foreground' }: {
   item: NavItem;
   pathname: string | null;
   collapsed: boolean;
   unreadCount?: number;
+  /** Tooltip / accessible label for the badge */
+  badgeTitle?: string;
+  badgeClassName?: string;
 }) {
   const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname?.startsWith(item.href));
   const showBadge = unreadCount > 0;
@@ -167,12 +180,12 @@ const NavLink = memo(function NavLink({ item, pathname, collapsed, unreadCount =
         )}
       </AnimatePresence>
       {showBadge && !collapsed && (
-        <span className="bg-primary text-primary-foreground text-[10px] font-bold rounded-full h-5 min-w-[20px] px-1 flex items-center justify-center">
+        <span title={badgeTitle} aria-label={badgeTitle} className={cn(badgeClassName, "text-[10px] font-bold rounded-full h-5 min-w-[20px] px-1 flex items-center justify-center")}>
           {unreadCount}
         </span>
       )}
       {showBadge && collapsed && (
-        <span className="absolute top-1.5 right-1.5 bg-primary text-primary-foreground text-[10px] font-bold rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center">
+        <span title={badgeTitle} aria-label={badgeTitle} className={cn(badgeClassName, "absolute top-1.5 right-1.5 text-[10px] font-bold rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center")}>
           {unreadCount}
         </span>
       )}

@@ -23,7 +23,12 @@ class NotificationService
     ) {
     }
 
-    public function push(User $recipient, string $type, string $title, string $message, ?Project $project = null): void
+    /**
+     * Only persist()s: the caller MUST flush() afterwards (typically its own
+     * flush at the end of the action), otherwise the notification is silently
+     * dropped at the end of the request.
+     */
+    public function push(User $recipient, string $type, string $title, string $message, ?Project $project = null, ?User $relatedUser = null): void
     {
         $notification = new Notification();
         $notification->setRecipient($recipient);
@@ -31,14 +36,16 @@ class NotificationService
         $notification->setTitle($title);
         $notification->setMessage($message);
         $notification->setProject($project);
+        $notification->setRelatedUser($relatedUser);
 
         $this->em->persist($notification);
     }
 
-    public function pushToAdmins(string $type, string $title, string $message, ?Project $project = null): void
+    /** Same flush() requirement as push(). Recipients: every active admin. */
+    public function pushToAdmins(string $type, string $title, string $message, ?Project $project = null, ?User $relatedUser = null): void
     {
         foreach ($this->userRepository->findAdmins() as $admin) {
-            $this->push($admin, $type, $title, $message, $project);
+            $this->push($admin, $type, $title, $message, $project, $relatedUser);
         }
     }
 }

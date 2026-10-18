@@ -30,4 +30,26 @@ class NotificationRepository extends ServiceEntityRepository
             ->getQuery()
             ->getResult();
     }
+
+    /**
+     * Marks as read every notification of $type about $relatedUser, whoever
+     * its recipient is. Bulk DQL UPDATE: runs immediately, no flush() needed.
+     *
+     * @return int number of notifications updated
+     */
+    public function markReadByRelatedUser(User $relatedUser, string $type): int
+    {
+        return $this->createQueryBuilder('n')
+            ->update()
+            ->set('n.isRead', ':read')
+            ->andWhere('n.relatedUser = :user')
+            ->andWhere('n.type = :type')
+            ->andWhere('n.isRead = :unread')
+            ->setParameter('read', true)
+            ->setParameter('unread', false)
+            ->setParameter('user', $relatedUser)
+            ->setParameter('type', $type)
+            ->getQuery()
+            ->execute();
+    }
 }

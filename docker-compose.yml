@@ -51,7 +51,12 @@ services:
       CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN:?absent de .env (voir .env.docker.example)}
       FRONTEND_URL: ${FRONTEND_URL:?absent de .env (voir .env.docker.example)}
       DEFAULT_URI: ${DEFAULT_URI:?absent de .env (voir .env.docker.example)}
-      MAILER_DSN: ${MAILER_DSN:-null://null}
+      # Dev : smtp://mailpit:1025 -> les e-mails sont capturés par Mailpit
+      # (service ci-dessous), jamais réellement envoyés.
+      MAILER_DSN: ${MAILER_DSN:-smtp://mailpit:1025}
+      MAILER_FROM: ${MAILER_FROM:-no-reply@taskmanager.local}
+      # Vide = tous les admins actifs reçoivent l'alerte "compte en attente".
+      ADMIN_NOTIFY_EMAIL: ${ADMIN_NOTIFY_EMAIL:-}
     volumes:
       - ./back:/var/www/html
       # Volume nommé sur vendor/ : évite qu'un bind-mount sans vendor/ (clone
@@ -103,6 +108,14 @@ services:
     # que l'API, donc ni CORS ni URL différente selon le service).
     depends_on:
       - back
+
+  # Boîte mail de test (dev uniquement) : capture tout ce que le back envoie
+  # en SMTP sur mailpit:1025 et l'affiche sur http://<URL publique>:8025.
+  mailpit:
+    image: axllent/mailpit:v1.21.8
+    restart: unless-stopped
+    ports:
+      - "${MAILPIT_PORT:-8025}:8025"
 
   adminer:
     image: adminer:4

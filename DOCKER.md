@@ -115,6 +115,18 @@ Desktop/Engine.
    | Front | `<URL>/` | Comptes de démo du front (voir `front/lib/mock-data` ou l'écran de connexion) |
    | API + doc Swagger | `<URL>/api/doc` | Admin : `admin@taskmanager.local` / `ChangeMe!2026` |
    | Adminer | http://localhost:8080 | Système : MySQL, Serveur : `mysql`, Utilisateur/mdp : valeurs de `MYSQL_USER`/`MYSQL_PASSWORD` dans `.env`, Base : `MYSQL_DATABASE` |
+   | Mailpit (dev) | http://localhost:8025 | Aucun — boîte de test : tous les e-mails envoyés par le back y arrivent (rien ne part réellement) |
+
+   **Notifications « compte en attente »** : quand un `membre` / `chef de
+   projet` s'inscrit (statut `pending`), chaque admin actif reçoit une
+   notification dans l'app (cloche + toast, rafraîchis toutes les 60 s), le
+   lien **Utilisateurs** affiche un badge orange (nombre de comptes en
+   attente, vérifié toutes les 30 s), et un e-mail part aux admins
+   (`ADMIN_NOTIFY_EMAIL`, sinon tous les admins actifs) + un e-mail de
+   confirmation à l'inscrit. Valider/refuser le compte fait disparaître
+   l'alerte chez **tous** les admins. Un échec d'envoi d'e-mail est loggé
+   (`docker compose logs back | grep "Échec de l'envoi"`) sans bloquer
+   l'inscription.
 
 ---
 
@@ -279,7 +291,10 @@ changer dans `.env` puis juste faire `docker compose restart front` ne suffit
 | `CORS_ALLOW_ORIGIN` | Regex des origines autorisées (NelmioCorsBundle) | `localhost` / `127.0.0.1` | **domaine public réel** du front |
 | `FRONTEND_URL` | URL publique, utilisée par le back (liens dans les emails, etc.) | `http://localhost` | URL publique (ex. `http://192.168.88.236`) |
 | `DEFAULT_URI` | URI par défaut du back (CLI, redirections) — **même URL publique** | `http://localhost` | idem |
-| `MAILER_DSN` | DSN Symfony Mailer | `null://null` (pas d'envoi) | DSN SMTP réel |
+| `MAILER_DSN` | DSN Symfony Mailer | `smtp://mailpit:1025` (capturé par Mailpit) | DSN SMTP réel (`null://null` = aucun envoi) |
+| `MAILER_FROM` | Expéditeur des e-mails | `no-reply@taskmanager.local` | adresse autorisée par le SMTP |
+| `ADMIN_NOTIFY_EMAIL` | Destinataires de l'alerte « compte en attente » (séparés par des virgules) | vide = tous les admins actifs | idem, ou une boîte partagée |
+| `MAILPIT_PORT` | Port hôte de l'interface Mailpit | `8025` | *(service absent en prod)* |
 | `HTTP_PORT` | Seul port public : `nginx` sert le front **et** l'API (`/api/*`, `/uploads/*`) | `80` | idem |
 | `ADMINER_PORT` | Port hôte publié pour `adminer` | `8080` | *(service absent en prod)* |
 | `NEXT_PUBLIC_API_URL` | URL de l'API vue par le **navigateur**, inlinée au build — **même URL publique** | `http://localhost` | idem |
