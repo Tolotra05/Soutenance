@@ -18,13 +18,28 @@
   " $ \ ou `.
 
   Lancement (depuis le dossier du projet) :
+    .\sync_mysql_credentials.cmd -Prod                 # la prod (voir ci-dessous)
+    .\sync_mysql_credentials.cmd docker-compose.yml    # le dev (.env, projet du dossier)
     .\sync_mysql_credentials.cmd                       # fichier compose détecté
-    .\sync_mysql_credentials.cmd docker-compose.yml    # ou imposé
-  Sans argument, le fichier compose est celui qui a créé le conteneur mysql en
-  place (dev et prod partagent le même nom de projet : viser le mauvais
-  recréerait mysql avec l'autre configuration) ; à défaut docker-compose.prod.yml.
+    .\sync_mysql_credentials.cmd docker-compose.prod.yml -EnvFile .env.prod -Project taskmanager-prod
+
+  -Prod = docker-compose.prod.yml + .env.prod s'il existe (sinon .env) + projet
+  PROD_PROJECT de jenkins/.env s'il existe (sinon le nom du dossier). Couvre
+  la prod séparée du dev (PC Windows : .env.prod, projet taskmanager-prod) comme
+  la prod seule d'un serveur (.env, projet du dossier).
+
+  Sans -EnvFile ni -Project, Docker Compose lit .env et prend le nom du dossier
+  comme projet. Sur une machine où dev et prod cohabitent, viser la prod ainsi
+  toucherait le projet du DEV : utiliser -Prod.
+  Sans fichier compose, c'est celui qui a créé le conteneur mysql en place ; à
+  défaut docker-compose.prod.yml.
 #>
-param([string]$File)
+param(
+    [string]$File,
+    [string]$EnvFile = '.env',
+    [string]$Project,
+    [switch]$Prod
+)
 
 Set-Location -Path $PSScriptRoot
 $recovery = 'mysql-recovery'
@@ -45,11 +60,23 @@ function Invoke-Sh([string[]]$dockerArgs, [string]$script) {
     docker @dockerArgs sh -c "echo $b64 | base64 -d | sh"
 }
 
-if (-not (Test-Path .env)) { Fail ".env introuvable dans $PSScriptRoot." }
+if ($Prod) {
+    if (-not $File) { $File = 'docker-compose.prod.yml' }
+    if ($EnvFile -eq '.env' -and (Test-Path .env.prod)) { $EnvFile = '.env.prod' }
+    if (-not $Project -and (Test-Path jenkins\.env)) {
+        $line = Get-Content jenkins\.env | Where-Object { $_ -match '^PROD_PROJECT=' } | Select-Object -First 1
+        if ($line) { $Project = ($line -replace '^PROD_PROJECT=', '').Trim() }
+    }
+}
+
+if (-not (Test-Path $EnvFile)) { Fail "$EnvFile introuvable dans $PSScriptRoot." }
+# Options communes à toutes les commandes Compose : fichier d'environnement et projet visés.
+$target = @('--env-file', $EnvFile)
+if ($Project) { $target += @('-p', $Project) }
 
 if (-not $File) {
     # Fichier compose du conteneur mysql existant de ce projet.
-    $project = docker compose -f docker-compose.prod.yml config 2>$null |
+    $project = docker compose @target -f docker-compose.prod.yml config 2>$null |
         Where-Object { $_ -match '^name: ' } | Select-Object -First 1
     if ($project) {
         $project = $project -replace '^name: ', ''
@@ -69,8 +96,11 @@ if (-not $File) {
 }
 if (-not $File) { $File = 'docker-compose.prod.yml' }
 if (-not (Test-Path $File)) { Fail "$File introuvable dans $PSScriptRoot." }
-$dc = @('compose', '-f', $File)
-Write-Host "Fichier compose : $File"
+$dc = @('compose') + $target + @('-f', $File)
+$projectName = (docker @dc config 2>$null | Where-Object { $_ -match '^name: ' } | Select-Object -First 1) -replace '^name: ', ''
+Write-Host "Fichier compose : $File | environnement : $EnvFile | projet : $projectName"
+# Commande à recopier pour consulter ce même projet (messages d'aide).
+$hint = 'docker compose ' + (($target + @('-f', $File)) -join ' ')
 
 function Wait-Mysql {
     for ($i = 0; $i -lt 60; $i++) {
@@ -78,7 +108,7 @@ function Wait-Mysql {
         if ($LASTEXITCODE -eq 0) { return }
         Start-Sleep -Seconds 2
     }
-    Fail "MySQL ne répond pas (voir : docker compose -f $File logs mysql)."
+    Fail "MySQL ne répond pas (voir : $hint logs mysql)."
 }
 
 function Test-Credentials {
@@ -89,14 +119,14 @@ mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" -e "SELECT 1" >/dev/
     return ($LASTEXITCODE -eq 0)
 }
 
-Write-Host '[1/3] Vérification des accès du .env...'
+Write-Host "[1/3] Vérification des accès de $EnvFile..."
 docker @dc up -d mysql 2>$null | Out-Null   # (re)crée mysql avec les valeurs actuelles du .env
 Wait-Mysql
 if (Test-Credentials) {
-    Write-Host '      OK : root et MYSQL_USER acceptent déjà les mots de passe du .env. Rien à faire.' -ForegroundColor Green
+    Write-Host "      OK : root et MYSQL_USER acceptent déjà les mots de passe de $EnvFile. Rien à faire." -ForegroundColor Green
     exit 0
 }
-Write-Host '      Les comptes MySQL ne correspondent pas au .env : réalignement.' -ForegroundColor Yellow
+Write-Host "      Les comptes MySQL ne correspondent pas à $EnvFile : réalignement." -ForegroundColor Yellow
 
 Write-Host '[2/3] Réalignement (MySQL temporairement sans contrôle des mots de passe)...'
 docker rm -f $recovery 2>$null | Out-Null
@@ -132,7 +162,7 @@ FLUSH PRIVILEGES;
 SQL
 '@
     if ($LASTEXITCODE -ne 0) { throw 'la mise à jour des comptes a échoué.' }
-    Write-Host '      Comptes root et MYSQL_USER mis à jour depuis .env.'
+    Write-Host "      Comptes root et MYSQL_USER mis à jour depuis $EnvFile."
 }
 catch {
     $failure = $_.Exception.Message
@@ -149,6 +179,6 @@ finally {
 if ($failure) { Fail $failure }
 
 Wait-Mysql
-if (-not (Test-Credentials)) { Fail "les accès du .env sont toujours refusés (voir : docker compose -f $File logs mysql)." }
-Write-Host '      OK : MySQL utilise maintenant les accès du .env.' -ForegroundColor Green
-Write-Host "      Vérifier back : docker compose -f $File ps   /   docker compose -f $File logs back --tail 20"
+if (-not (Test-Credentials)) { Fail "les accès de $EnvFile sont toujours refusés (voir : $hint logs mysql)." }
+Write-Host "      OK : MySQL utilise maintenant les accès de $EnvFile." -ForegroundColor Green
+Write-Host "      Vérifier back : $hint ps   /   $hint logs back --tail 20"

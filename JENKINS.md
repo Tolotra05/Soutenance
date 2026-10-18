@@ -156,6 +156,14 @@ relit qu'au démarrage :
 **Modifier le compte admin ou un réglage** : éditer `jenkins/.env`, puis
 `docker compose -f jenkins/docker-compose.yml up -d`.
 
+**Changement d'IP du serveur** : rien n'est bloqué. Jenkins et la prod restent
+accessibles sur la nouvelle adresse. `./change_ip.sh` (Linux) ou
+`.\change_ip.cmd` (Windows) met à jour `.env`, `.env.prod` et `jenkins/.env`
+(`JENKINS_URL`, utilisé pour les liens absolus produits par Jenkins), puis
+indique comment l'appliquer :
+`docker compose -f jenkins/docker-compose.yml up -d --force-recreate`, puis
+un build pour redéployer la prod.
+
 ---
 
 ## 5. Dépannage
