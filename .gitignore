@@ -1,2 +1,7 @@
 # Secrets Docker réels (copié depuis .env.docker.example, jamais commité)
 /.env
+
+# Secrets du Jenkins préconfiguré (copié depuis jenkins/.env.example)
+/jenkins/.env
+# .env de la prod déployée par Jenkins (voir JENKINS.md)
+/.env.prod

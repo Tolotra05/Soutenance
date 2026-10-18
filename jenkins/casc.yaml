@@ -1,0 +1,72 @@
+# Configuration complète de Jenkins, appliquée à chaque démarrage (Configuration
+# as Code). Les ${...} viennent de l'environnement du conteneur (jenkins/.env).
+jenkins:
+  systemMessage: "TaskManager : CI/CD. Configuration générée par jenkins/casc.yaml (ne pas modifier via l'interface)."
+  numExecutors: 2
+  mode: NORMAL
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "${JENKINS_ADMIN_ID}"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+  globalNodeProperties:
+    - envVars:
+        env:
+          # Projet Docker Compose de la prod : le déploiement réutilise ses
+          # conteneurs et ses volumes (base de données, clés JWT, fichiers).
+          - key: PROD_PROJECT
+            value: "${PROD_PROJECT}"
+
+unclassified:
+  location:
+    url: "${JENKINS_URL}"
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          # .env de prod, lu depuis le fichier monté par docker-compose.yml.
+          # Rechargé à chaque redémarrage de Jenkins.
+          - file:
+              scope: GLOBAL
+              id: taskmanager-env
+              description: ".env de prod (monté depuis le serveur)"
+              fileName: ".env"
+              secretBytes: "${readFileBase64:/run/secrets/taskmanager.env}"
+
+jobs:
+  - script: >
+      pipelineJob('taskmanager') {
+        description('TaskManager : build, vérifications, sauvegarde de la base, déploiement et contrôle (Jenkinsfile du dépôt).')
+        // Mêmes paramètres et déclencheur que le Jenkinsfile, déclarés aussi ici :
+        // le job étant recréé à chaque démarrage de Jenkins, « Build with
+        // Parameters » et la surveillance du dépôt sont ainsi disponibles tout
+        // de suite, sans attendre un premier build.
+        parameters {
+          booleanParam('DEPLOY', true, 'Déployer en prod après le build et les vérifications (branche master uniquement). Décocher pour un build de contrôle sans toucher à la prod.')
+          stringParam('REGISTRY', '', 'Registre Docker où pousser les images (ex : registry.example.com/taskmanager). Vide = pas de push.')
+        }
+        properties {
+          pipelineTriggers {
+            triggers {
+              pollSCM { scmpoll_spec('H/5 * * * *') }
+            }
+          }
+        }
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote { url('${REPO_URL}') }
+                branch('*/${REPO_BRANCH}')
+              }
+            }
+            scriptPath('Jenkinsfile')
+            lightweight(true)
+          }
+        }
+      }
