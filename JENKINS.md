@@ -149,9 +149,13 @@ disponibles : typage, lint, validité de la configuration Symfony. Ajouter une
     sh -c 'mysql --default-character-set=utf8mb4 -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'
   ```
 
-**Après une modification du `.env` de prod**, redémarrer Jenkins, qui ne le
+**Après une modification du `.env` de prod**, recréer Jenkins, qui ne le
 relit qu'au démarrage :
-`docker compose -f jenkins/docker-compose.yml restart`.
+`docker compose -f jenkins/docker-compose.yml up -d --force-recreate`.
+Un simple `restart` ne suffit pas : le fichier est monté seul dans le conteneur,
+et un éditeur qui le réécrit (`sed -i`, `change_ip.sh`…) en crée un nouveau que
+le conteneur redémarré ne voit pas. Jenkins redéploierait alors les anciens mots
+de passe (« Access denied »). Diagnostic : `bash diag_mysql.sh`.
 
 **Modifier le compte admin ou un réglage** : éditer `jenkins/.env`, puis
 `docker compose -f jenkins/docker-compose.yml up -d`.
